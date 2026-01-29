@@ -10,12 +10,7 @@ import { WelcomeScreen } from "@/components/screens/welcome-screen";
 import { useState } from "react";
 import { StyleSheet, View } from "react-native";
 
-type Screen =
-  | "welcome"
-  | "login"
-  | "signup"
-  | "onboarding"
-  | "dashboard";
+type Screen = "welcome" | "login" | "signup" | "onboarding" | "dashboard";
 
 type Tab = "accueil" | "recommandations" | "suivi" | "encyclopedie";
 
@@ -40,10 +35,18 @@ export default function App() {
   ) {
     return (
       <View style={styles.container}>
-        {currentScreen === "welcome" && <WelcomeScreen onNavigate={handleNavigate} />}
-        {currentScreen === "login" && <LoginScreen onNavigate={handleNavigate} />}
-        {currentScreen === "signup" && <SignupScreen onNavigate={handleNavigate} />}
-        {currentScreen === "onboarding" && <OnboardingScreen onNavigate={handleNavigate} />}
+        {currentScreen === "welcome" && (
+          <WelcomeScreen onNavigate={handleNavigate} />
+        )}
+        {currentScreen === "login" && (
+          <LoginScreen onNavigate={handleNavigate} />
+        )}
+        {currentScreen === "signup" && (
+          <SignupScreen onNavigate={handleNavigate} />
+        )}
+        {currentScreen === "onboarding" && (
+          <OnboardingScreen onNavigate={handleNavigate} />
+        )}
       </View>
     );
   }
@@ -57,7 +60,7 @@ export default function App() {
         {activeTab === "suivi" && <SuiviScreen />}
         {activeTab === "encyclopedie" && <EncyclopedieScreen />}
       </View>
-      
+
       <BottomNavigation activeTab={activeTab} onTabChange={handleTabChange} />
     </View>
   );
@@ -66,11 +69,11 @@ export default function App() {
 const styles = StyleSheet.create({
   container: {
     flex: 1,
-    backgroundColor: '#fef6e2',
+    backgroundColor: "#fef6e2",
   },
   containerWithNav: {
     flex: 1,
-    backgroundColor: '#fef6e2',
+    backgroundColor: "#fef6e2",
   },
   content: {
     flex: 1,
