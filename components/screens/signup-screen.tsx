@@ -1,6 +1,8 @@
+import { useAuth } from "@/context/auth";
 import { ArrowLeft, Lock, Mail, Shield } from "lucide-react-native";
 import { useState } from "react";
 import {
+  Alert,
   Image,
   KeyboardAvoidingView,
   Platform,
@@ -17,14 +19,26 @@ interface SignupScreenProps {
 }
 
 export function SignupScreen({ onNavigate }: SignupScreenProps) {
+  const { signupWithEmail } = useAuth();
+  const [loading, setLoading] = useState(false);
   const [formData, setFormData] = useState({
     email: "",
     password: "",
   });
 
-  const handleSignup = () => {
-    // Navigate to onboarding
-    onNavigate("onboarding");
+  const handleSignup = async () => {
+    try {
+      setLoading(true);
+      await signupWithEmail(formData.email.trim(), formData.password);
+      onNavigate("onboarding");
+    } catch (e: any) {
+      Alert.alert(
+        "Inscription impossible",
+        e?.response?.data?.detail ?? "Erreur d'inscription",
+      );
+    } finally {
+      setLoading(false);
+    }
   };
 
   return (

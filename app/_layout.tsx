@@ -7,6 +7,7 @@ import { RecommendationsScreen } from "@/components/screens/recommendations-scre
 import { SignupScreen } from "@/components/screens/signup-screen";
 import { SuiviScreen } from "@/components/screens/suivi-screen";
 import { WelcomeScreen } from "@/components/screens/welcome-screen";
+import { AuthProvider } from "@/context/auth";
 import { useState } from "react";
 import { StyleSheet, View } from "react-native";
 
@@ -15,6 +16,13 @@ type Screen = "welcome" | "login" | "signup" | "onboarding" | "dashboard";
 type Tab = "accueil" | "recommandations" | "suivi" | "encyclopedie";
 
 export default function App() {
+  return (
+    <AuthProvider>
+      <RootApp />
+    </AuthProvider>
+  );
+}
+function RootApp() {
   const [currentScreen, setCurrentScreen] = useState<Screen>("welcome");
   const [activeTab, setActiveTab] = useState<Tab>("accueil");
 

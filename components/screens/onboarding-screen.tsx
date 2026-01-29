@@ -14,10 +14,12 @@ import {
   Target,
   User,
   Weight,
-  Zap
+  Zap,
 } from "lucide-react-native";
 import { useState } from "react";
 import {
+  ActivityIndicator,
+  Alert,
   ScrollView,
   StyleSheet,
   Text,
@@ -25,6 +27,9 @@ import {
   TouchableOpacity,
   View,
 } from "react-native";
+
+import { useAuth } from "@/context/auth";
+import { updateMyProfile } from "@/services/api";
 
 interface OnboardingScreenProps {
   onNavigate: (screen: string) => void;
@@ -114,6 +119,9 @@ const ALLERGIES: Option[] = [
 ];
 
 export function OnboardingScreen({ onNavigate }: OnboardingScreenProps) {
+  const { refreshMe } = useAuth();
+  const [saving, setSaving] = useState(false);
+
   const [step, setStep] = useState(1);
   const [formData, setFormData] = useState({
     firstname: "",
@@ -135,6 +143,80 @@ export function OnboardingScreen({ onNavigate }: OnboardingScreenProps) {
   const totalSteps = formData.sex === "Femme" ? 6 : 5;
   const progress = (step / totalSteps) * 100;
 
+  const sexToApi = (sex: string) => {
+    if (sex === "Femme") return "female";
+    if (sex === "Homme") return "male";
+    return "other";
+  };
+
+  const ageRangeToApi = (range: string) => {
+    switch (range) {
+      case "Moins de 18 ans":
+        return "-18";
+      case "18 – 30 ans":
+        return "18-30";
+      case "31 – 45 ans":
+        return "31-45";
+      case "46 – 60 ans":
+        return "46-60";
+      case "Plus de 60 ans":
+        return "+60";
+      default:
+        return null;
+    }
+  };
+
+  const handleSubmitProfile = async () => {
+    const medicationValues = new Set(MEDICATION_CONDITIONS.map((x) => x.value));
+    const healthConditionValues = new Set(
+      HEALTH_CONDITIONS.map((x) => x.value),
+    );
+
+    const medications = formData.conditions.filter((x) =>
+      medicationValues.has(x),
+    );
+    const conditions = formData.conditions.filter((x) =>
+      healthConditionValues.has(x),
+    );
+
+    const payload = {
+      personal: {
+        name: `${formData.firstname} ${formData.lastname}`.trim() || undefined,
+        sex: sexToApi(formData.sex),
+        age_range: ageRangeToApi(formData.ageRange) ?? undefined,
+        height_cm: formData.height ? Number(formData.height) : undefined,
+        weight_kg: formData.weight ? Number(formData.weight) : undefined,
+      },
+      activity_level: formData.activityLevel || undefined,
+      goals: formData.goals.length ? formData.goals : undefined,
+      medical: {
+        is_pregnant: formData.sex === "Femme" ? formData.pregnancy : undefined,
+        is_breastfeeding:
+          formData.sex === "Femme" ? formData.breastfeeding : undefined,
+        conditions: conditions.length ? conditions : undefined,
+        diseases: formData.diseases.length ? formData.diseases : undefined,
+        medications: medications.length ? medications : undefined,
+        allergies: formData.allergies.includes("none")
+          ? ["none"]
+          : formData.allergies,
+      },
+    };
+
+    try {
+      setSaving(true);
+      await updateMyProfile(payload);
+      await refreshMe();
+      onNavigate("dashboard");
+    } catch (e: any) {
+      Alert.alert(
+        "Erreur",
+        e?.response?.data?.detail ?? "Impossible d'enregistrer le profil",
+      );
+    } finally {
+      setSaving(false);
+    }
+  };
+
   const handleNext = () => {
     // Skip step 2 (pregnancy/breastfeeding) if user is male
     if (step === 1 && formData.sex === "Homme") {
@@ -142,7 +224,8 @@ export function OnboardingScreen({ onNavigate }: OnboardingScreenProps) {
     } else if (step < totalSteps) {
       setStep(step + 1);
     } else {
-      onNavigate("dashboard");
+      // LAST STEP => call API
+      handleSubmitProfile();
     }
   };
 
@@ -206,6 +289,7 @@ export function OnboardingScreen({ onNavigate }: OnboardingScreenProps) {
         <TouchableOpacity
           onPress={handleBack}
           style={[styles.backButton, step === 1 && styles.invisible]}
+          disabled={saving}
         >
           <ArrowLeft size={24} color="#14272d" />
         </TouchableOpacity>
@@ -276,6 +360,7 @@ export function OnboardingScreen({ onNavigate }: OnboardingScreenProps) {
                         styles.yesNoButton,
                         formData.sex === option && styles.yesNoButtonSelected,
                       ]}
+                      disabled={saving}
                     >
                       <Text
                         style={[
@@ -311,6 +396,7 @@ export function OnboardingScreen({ onNavigate }: OnboardingScreenProps) {
                         formData.ageRange === range &&
                           styles.dropdownOptionSelected,
                       ]}
+                      disabled={saving}
                     >
                       <Text
                         style={[
@@ -384,6 +470,7 @@ export function OnboardingScreen({ onNavigate }: OnboardingScreenProps) {
                     styles.yesNoButton,
                     formData.pregnancy === true && styles.yesNoButtonSelected,
                   ]}
+                  disabled={saving}
                 >
                   <Text
                     style={[
@@ -400,6 +487,7 @@ export function OnboardingScreen({ onNavigate }: OnboardingScreenProps) {
                     styles.yesNoButton,
                     formData.pregnancy === false && styles.yesNoButtonSelected,
                   ]}
+                  disabled={saving}
                 >
                   <Text
                     style={[
@@ -426,6 +514,7 @@ export function OnboardingScreen({ onNavigate }: OnboardingScreenProps) {
                     formData.breastfeeding === true &&
                       styles.yesNoButtonSelected,
                   ]}
+                  disabled={saving}
                 >
                   <Text
                     style={[
@@ -446,6 +535,7 @@ export function OnboardingScreen({ onNavigate }: OnboardingScreenProps) {
                     formData.breastfeeding === false &&
                       styles.yesNoButtonSelected,
                   ]}
+                  disabled={saving}
                 >
                   <Text
                     style={[
@@ -496,6 +586,7 @@ export function OnboardingScreen({ onNavigate }: OnboardingScreenProps) {
                     formData.activityLevel === o.value &&
                       styles.optionButtonSelected,
                   ]}
+                  disabled={saving}
                 >
                   <Text
                     style={[
@@ -555,6 +646,7 @@ export function OnboardingScreen({ onNavigate }: OnboardingScreenProps) {
                       formData.goals.includes(goal.value) &&
                         styles.optionButtonSelected,
                     ]}
+                    disabled={saving}
                   >
                     <Icon size={20} color="#7ea69d" />
                     <Text
@@ -604,6 +696,7 @@ export function OnboardingScreen({ onNavigate }: OnboardingScreenProps) {
                       formData.conditions.includes(o.value) &&
                         styles.conditionButtonSelected,
                     ]}
+                    disabled={saving}
                   >
                     <Text
                       style={[
@@ -635,6 +728,7 @@ export function OnboardingScreen({ onNavigate }: OnboardingScreenProps) {
                       formData.conditions.includes(o.value) &&
                         styles.conditionButtonSelected,
                     ]}
+                    disabled={saving}
                   >
                     <Text
                       style={[
@@ -657,6 +751,7 @@ export function OnboardingScreen({ onNavigate }: OnboardingScreenProps) {
                 styles.noneButton,
                 formData.conditions.length === 0 && styles.noneButtonSelected,
               ]}
+              disabled={saving}
             >
               <Text
                 style={[
@@ -703,6 +798,7 @@ export function OnboardingScreen({ onNavigate }: OnboardingScreenProps) {
                     formData.diseases.includes(o.value) &&
                       styles.conditionButtonSelected,
                   ]}
+                  disabled={saving}
                 >
                   <Text
                     style={[
@@ -717,7 +813,7 @@ export function OnboardingScreen({ onNavigate }: OnboardingScreenProps) {
               ))}
             </View>
 
-            {/* Add Allergies section here */}
+            {/* Allergies section */}
             <View style={styles.sectionContainer}>
               <View style={styles.sectionHeader}>
                 <AlertCircle size={18} color="#7ea69d" />
@@ -735,6 +831,7 @@ export function OnboardingScreen({ onNavigate }: OnboardingScreenProps) {
                       formData.allergies.includes(o.value) &&
                         styles.conditionButtonSelected,
                     ]}
+                    disabled={saving}
                   >
                     <Text
                       style={[
@@ -755,13 +852,23 @@ export function OnboardingScreen({ onNavigate }: OnboardingScreenProps) {
 
       {/* Bottom CTA */}
       <View style={styles.bottomCTA}>
-        <TouchableOpacity onPress={handleNext} style={styles.nextButton}>
-          <Text style={styles.nextButtonText}>
-            {step === totalSteps
-              ? "Valider & accéder à mon espace"
-              : "Continuer"}
-          </Text>
-          <ArrowRight size={20} color="white" />
+        <TouchableOpacity
+          onPress={handleNext}
+          style={styles.nextButton}
+          disabled={saving}
+        >
+          {saving ? (
+            <ActivityIndicator color="white" />
+          ) : (
+            <>
+              <Text style={styles.nextButtonText}>
+                {step === totalSteps
+                  ? "Valider & accéder à mon espace"
+                  : "Continuer"}
+              </Text>
+              <ArrowRight size={20} color="white" />
+            </>
+          )}
         </TouchableOpacity>
       </View>
     </View>

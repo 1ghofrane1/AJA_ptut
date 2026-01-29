@@ -1,15 +1,17 @@
+import { useAuth } from "@/context/auth";
 import { ArrowLeft, Eye, EyeOff, Lock, Mail } from "lucide-react-native";
 import { useState } from "react";
 import {
-    Image,
-    KeyboardAvoidingView,
-    Platform,
-    ScrollView,
-    StyleSheet,
-    Text,
-    TextInput,
-    TouchableOpacity,
-    View
+  Alert,
+  Image,
+  KeyboardAvoidingView,
+  Platform,
+  ScrollView,
+  StyleSheet,
+  Text,
+  TextInput,
+  TouchableOpacity,
+  View,
 } from "react-native";
 
 interface LoginScreenProps {
@@ -17,21 +19,34 @@ interface LoginScreenProps {
 }
 
 export function LoginScreen({ onNavigate }: LoginScreenProps) {
+  const { loginWithEmail } = useAuth();
+
   const [showPassword, setShowPassword] = useState(false);
   const [email, setEmail] = useState("");
   const [password, setPassword] = useState("");
+  const [loading, setLoading] = useState(false);
 
-  const handleLogin = () => {
-    // Mock login - navigate to dashboard
-    onNavigate("dashboard");
+  const handleLogin = async () => {
+    try {
+      setLoading(true);
+      await loginWithEmail(email.trim(), password);
+      onNavigate("dashboard");
+    } catch (e: any) {
+      Alert.alert(
+        "Connexion impossible",
+        e?.response?.data?.detail ?? "Erreur de connexion",
+      );
+    } finally {
+      setLoading(false);
+    }
   };
 
   return (
-    <KeyboardAvoidingView 
-      style={styles.container} 
+    <KeyboardAvoidingView
+      style={styles.container}
       behavior={Platform.OS === "ios" ? "padding" : "height"}
     >
-      <ScrollView 
+      <ScrollView
         style={styles.scrollView}
         contentContainerStyle={styles.scrollContent}
         keyboardShouldPersistTaps="handled"
@@ -44,8 +59,8 @@ export function LoginScreen({ onNavigate }: LoginScreenProps) {
           >
             <ArrowLeft size={24} color="#14272d" />
           </TouchableOpacity>
-          <Image 
-            source={require('@/assets/images/logo aja 1.png')} 
+          <Image
+            source={require("@/assets/images/logo aja 1.png")}
             style={styles.logo}
           />
         </View>
@@ -62,11 +77,7 @@ export function LoginScreen({ onNavigate }: LoginScreenProps) {
             <View style={styles.inputGroup}>
               <Text style={styles.label}>Email</Text>
               <View style={styles.inputWrapper}>
-                <Mail 
-                  size={20} 
-                  color="#7ea69d" 
-                  style={styles.inputIcon}
-                />
+                <Mail size={20} color="#7ea69d" style={styles.inputIcon} />
                 <TextInput
                   value={email}
                   onChangeText={setEmail}
@@ -84,11 +95,7 @@ export function LoginScreen({ onNavigate }: LoginScreenProps) {
             <View style={styles.inputGroup}>
               <Text style={styles.label}>Mot de passe</Text>
               <View style={styles.inputWrapper}>
-                <Lock 
-                  size={20} 
-                  color="#7ea69d" 
-                  style={styles.inputIcon}
-                />
+                <Lock size={20} color="#7ea69d" style={styles.inputIcon} />
                 <TextInput
                   value={password}
                   onChangeText={setPassword}
@@ -115,15 +122,14 @@ export function LoginScreen({ onNavigate }: LoginScreenProps) {
             {/* Forgot password */}
             <View style={styles.forgotPassword}>
               <TouchableOpacity>
-                <Text style={styles.forgotPasswordText}>Mot de passe oublié ?</Text>
+                <Text style={styles.forgotPasswordText}>
+                  Mot de passe oublié ?
+                </Text>
               </TouchableOpacity>
             </View>
 
             {/* Login button */}
-            <TouchableOpacity
-              onPress={handleLogin}
-              style={styles.loginButton}
-            >
+            <TouchableOpacity onPress={handleLogin} style={styles.loginButton}>
               <Text style={styles.loginButtonText}>Se connecter</Text>
             </TouchableOpacity>
 
@@ -167,7 +173,7 @@ export function LoginScreen({ onNavigate }: LoginScreenProps) {
 const styles = StyleSheet.create({
   container: {
     flex: 1,
-    backgroundColor: '#fef6e2',
+    backgroundColor: "#fef6e2",
   },
   scrollView: {
     flex: 1,
@@ -176,8 +182,8 @@ const styles = StyleSheet.create({
     flexGrow: 1,
   },
   header: {
-    flexDirection: 'row',
-    alignItems: 'center',
+    flexDirection: "row",
+    alignItems: "center",
     gap: 16,
     padding: 24,
   },
@@ -193,8 +199,8 @@ const styles = StyleSheet.create({
     paddingHorizontal: 24,
     paddingTop: 32,
     maxWidth: 448,
-    width: '100%',
-    alignSelf: 'center',
+    width: "100%",
+    alignSelf: "center",
   },
   formContainer: {
     gap: 24,
@@ -204,139 +210,139 @@ const styles = StyleSheet.create({
   },
   title: {
     fontSize: 32,
-    color: '#14272d',
-    fontWeight: '700',
+    color: "#14272d",
+    fontWeight: "700",
   },
   subtitle: {
     fontSize: 16,
-    color: '#7ea69d',
+    color: "#7ea69d",
   },
   inputGroup: {
     gap: 8,
   },
   label: {
-    color: '#14272d',
+    color: "#14272d",
     fontSize: 14,
   },
   inputWrapper: {
-    position: 'relative',
+    position: "relative",
   },
   inputIcon: {
-    position: 'absolute',
+    position: "absolute",
     left: 16,
-    top: '50%',
+    top: "50%",
     transform: [{ translateY: -10 }],
     zIndex: 1,
   },
   input: {
-    backgroundColor: 'white',
+    backgroundColor: "white",
     borderWidth: 1,
-    borderColor: 'rgba(20, 39, 45, 0.1)',
+    borderColor: "rgba(20, 39, 45, 0.1)",
     borderRadius: 12,
     paddingVertical: 12,
     paddingLeft: 48,
     paddingRight: 16,
-    color: '#14272d',
+    color: "#14272d",
     fontSize: 14,
   },
   inputWithRightIcon: {
     paddingRight: 48,
   },
   eyeButton: {
-    position: 'absolute',
+    position: "absolute",
     right: 16,
-    top: '50%',
+    top: "50%",
     transform: [{ translateY: -10 }],
     padding: 4,
   },
   forgotPassword: {
-    alignItems: 'flex-end',
+    alignItems: "flex-end",
   },
   forgotPasswordText: {
-    color: '#7ea69d',
+    color: "#7ea69d",
     fontSize: 14,
   },
   loginButton: {
-    backgroundColor: '#14272d',
+    backgroundColor: "#14272d",
     paddingVertical: 16,
     borderRadius: 16,
-    alignItems: 'center',
+    alignItems: "center",
   },
   loginButtonText: {
-    color: 'white',
+    color: "white",
     fontSize: 16,
-    fontWeight: '600',
+    fontWeight: "600",
   },
   divider: {
-    flexDirection: 'row',
-    alignItems: 'center',
+    flexDirection: "row",
+    alignItems: "center",
     paddingVertical: 16,
     gap: 16,
   },
   dividerLine: {
     flex: 1,
     height: 1,
-    backgroundColor: 'rgba(20, 39, 45, 0.1)',
+    backgroundColor: "rgba(20, 39, 45, 0.1)",
   },
   dividerText: {
-    color: '#7ea69d',
+    color: "#7ea69d",
     fontSize: 14,
   },
   googleButton: {
-    backgroundColor: 'white',
+    backgroundColor: "white",
     borderWidth: 1,
-    borderColor: 'rgba(20, 39, 45, 0.2)',
+    borderColor: "rgba(20, 39, 45, 0.2)",
     paddingVertical: 16,
     borderRadius: 16,
-    flexDirection: 'row',
-    alignItems: 'center',
-    justifyContent: 'center',
+    flexDirection: "row",
+    alignItems: "center",
+    justifyContent: "center",
     gap: 12,
   },
   googleIcon: {
     width: 20,
     height: 20,
-    position: 'relative',
+    position: "relative",
   },
   googleIconBlue: {
-    position: 'absolute',
+    position: "absolute",
     width: 20,
     height: 20,
-    backgroundColor: '#4285F4',
+    backgroundColor: "#4285F4",
   },
   googleIconGreen: {
-    position: 'absolute',
+    position: "absolute",
     width: 20,
     height: 20,
-    backgroundColor: '#34A853',
+    backgroundColor: "#34A853",
   },
   googleIconYellow: {
-    position: 'absolute',
+    position: "absolute",
     width: 20,
     height: 20,
-    backgroundColor: '#FBBC05',
+    backgroundColor: "#FBBC05",
   },
   googleIconRed: {
-    position: 'absolute',
+    position: "absolute",
     width: 20,
     height: 20,
-    backgroundColor: '#EA4335',
+    backgroundColor: "#EA4335",
   },
   googleButtonText: {
-    color: '#14272d',
+    color: "#14272d",
     fontSize: 16,
   },
   signupSection: {
-    alignItems: 'center',
+    alignItems: "center",
     marginTop: 32,
     paddingBottom: 32,
   },
   signupText: {
-    color: '#7ea69d',
+    color: "#7ea69d",
     fontSize: 14,
   },
   signupLink: {
-    color: '#14272d',
-    textDecorationLine: 'underline',
+    color: "#14272d",
+    textDecorationLine: "underline",
   },
 });
