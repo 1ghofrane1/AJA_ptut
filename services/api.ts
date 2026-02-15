@@ -2,10 +2,6 @@ import AsyncStorage from "@react-native-async-storage/async-storage";
 import axios from "axios";
 
 export const API_BASE_URL = "http://127.0.0.1:8000";
-// ✅ If testing on phone: use your PC IP (ex: http://192.168.1.10:8000)
-// ✅ If Android emulator: http://10.0.2.2:8000
-// ✅ If iOS simulator: http://localhost:8000
-
 export const TOKEN_KEY = "aja_token";
 
 export const api = axios.create({
@@ -13,16 +9,18 @@ export const api = axios.create({
   headers: { "Content-Type": "application/json" },
 });
 
-// Automatically attach token to every request
+// ✅ Safe interceptor (web + native)
 api.interceptors.request.use(async (config) => {
   const token = await AsyncStorage.getItem(TOKEN_KEY);
+
   if (token) {
-    config.headers.Authorization = `Bearer ${token}`;
+    config.headers = config.headers ?? {};
+    config.headers["Authorization"] = `Bearer ${token}`;
   }
+
   return config;
 });
 
-// ---- Types that match your FastAPI ----
 export type UserResponse = {
   id: string;
   email: string;
@@ -38,7 +36,6 @@ export type TokenResponse = {
   user: UserResponse;
 };
 
-// ---- Auth calls ----
 export async function signup(email: string, password: string) {
   const { data } = await api.post<TokenResponse>("/auth/signup", {
     email,
@@ -67,7 +64,6 @@ export async function updateMyProfile(payload: any) {
   return data;
 }
 
-// ---- Token helpers ----
 export async function saveToken(token: string) {
   await AsyncStorage.setItem(TOKEN_KEY, token);
 }

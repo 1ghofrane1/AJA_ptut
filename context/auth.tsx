@@ -1,20 +1,20 @@
 // context/auth.tsx
 import {
-    clearToken,
-    getMe,
-    login,
-    saveToken,
-    signup,
-    TOKEN_KEY,
-    UserResponse,
+  clearToken,
+  getMe,
+  login,
+  saveToken,
+  signup,
+  TOKEN_KEY,
+  UserResponse,
 } from "@/services/api";
 import AsyncStorage from "@react-native-async-storage/async-storage";
 import React, {
-    createContext,
-    useContext,
-    useEffect,
-    useMemo,
-    useState,
+  createContext,
+  useContext,
+  useEffect,
+  useMemo,
+  useState,
 } from "react";
 
 type AuthState = {
