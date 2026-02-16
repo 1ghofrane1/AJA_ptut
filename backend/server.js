@@ -136,7 +136,10 @@ app.post('/auth/signup', (req, res) => {
 app.post('/auth/login', (req, res) => {
   const { email, password } = req.body;
 
+  console.log(`🔐 Login attempt: ${email}`);
+
   if (!email || !password) {
+    console.log(`❌ Login failed: Missing email or password`);
     return res.status(400).json({ detail: 'Email and password are required' });
   }
 
@@ -150,6 +153,7 @@ app.post('/auth/login', (req, res) => {
   }
 
   if (!foundUser) {
+    console.log(`❌ Login failed: Invalid credentials for ${email} (user not found or wrong password)`);
     return res.status(401).json({ detail: 'Invalid credentials' });
   }
 
