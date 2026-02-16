@@ -1,36 +1,43 @@
 import { Activity, Calendar, TrendingUp } from "lucide-react-native";
-import { Dimensions, ScrollView, StyleSheet, Text, View } from "react-native";
+import { useEffect, useState } from "react";
+import { ActivityIndicator, Dimensions, ScrollView, StyleSheet, Text, View } from "react-native";
 import { LineChart } from "react-native-chart-kit";
+import { getProgress, type ProgressResponse } from "@/services/api";
 
 const screenWidth = Dimensions.get("window").width;
 
 export function SuiviScreen() {
-  // Mock data for evolution curve
-  const evolutionData = [
-    { day: 1, value: 45 },
-    { day: 2, value: 48 },
-    { day: 3, value: 52 },
-    { day: 4, value: 50 },
-    { day: 5, value: 55 },
-    { day: 6, value: 58 },
-    { day: 7, value: 62 },
-    { day: 8, value: 65 },
-    { day: 9, value: 63 },
-    { day: 10, value: 68 },
-  ];
+  const [loading, setLoading] = useState(true);
+  const [progressData, setProgressData] = useState<ProgressResponse | null>(null);
 
-  // Mock data for daily intake
-  const dailyIntakes = [
-    { time: "08:00", name: "Vitamine D3", taken: true },
-    { time: "08:00", name: "Oméga-3", taken: true },
-    { time: "21:00", name: "Magnésium", taken: false },
-  ];
+  useEffect(() => {
+    loadProgress();
+  }, []);
 
-  // Mock monthly calendar data
-  const monthlyData = Array.from({ length: 30 }, (_, i) => ({
-    day: i + 1,
-    intensity: Math.random() > 0.3 ? Math.floor(Math.random() * 3) + 1 : 0,
-  }));
+  const loadProgress = async () => {
+    try {
+      setLoading(true);
+      const data = await getProgress();
+      setProgressData(data);
+    } catch (error) {
+      console.error('Failed to load progress:', error);
+    } finally {
+      setLoading(false);
+    }
+  };
+
+  // Use data from backend, or fallback to empty arrays
+  const evolutionData = progressData?.evolution_data || [];
+  const dailyIntakes = progressData?.daily_intakes || [];
+  const monthlyData = progressData?.monthly_data || [];
+
+  if (loading) {
+    return (
+      <View style={[styles.container, { justifyContent: 'center', alignItems: 'center' }]}>
+        <ActivityIndicator size="large" color="#7ea69d" />
+      </View>
+    );
+  }
 
   const chartConfig = {
     backgroundColor: "#ffffff",
@@ -74,26 +81,32 @@ export function SuiviScreen() {
 
           {/* Smooth curve */}
           <View style={styles.chartContainer}>
-            <LineChart
-              data={{
-                labels: [],
-                datasets: [
-                  {
-                    data: evolutionData.map((d) => d.value),
-                  },
-                ],
-              }}
-              width={screenWidth - 88}
-              height={160}
-              chartConfig={chartConfig}
-              bezier
-              withHorizontalLabels={false}
-              withVerticalLabels={false}
-              withDots={false}
-              withInnerLines={false}
-              withOuterLines={false}
-              style={styles.chart}
-            />
+            {evolutionData.length > 0 ? (
+              <LineChart
+                data={{
+                  labels: [],
+                  datasets: [
+                    {
+                      data: evolutionData.map((d) => d.value),
+                    },
+                  ],
+                }}
+                width={screenWidth - 88}
+                height={160}
+                chartConfig={chartConfig}
+                bezier
+                withHorizontalLabels={false}
+                withVerticalLabels={false}
+                withDots={false}
+                withInnerLines={false}
+                withOuterLines={false}
+                style={styles.chart}
+              />
+            ) : (
+              <View style={[styles.chart, { justifyContent: 'center', alignItems: 'center', height: 160 }]}>
+                <Text style={{ color: '#7ea69d' }}>Pas encore de données</Text>
+              </View>
+            )}
           </View>
 
           {/* Caption */}
@@ -115,31 +128,33 @@ export function SuiviScreen() {
                 Votre régularité s'améliore de 12% ce mois-ci
               </Text>
               {/* Mini sparkline */}
-              <View style={styles.miniChart}>
-                <LineChart
-                  data={{
-                    labels: [],
-                    datasets: [
-                      {
-                        data: evolutionData.slice(0, 7).map((d) => d.value),
-                      },
-                    ],
-                  }}
-                  width={screenWidth - 136}
-                  height={32}
-                  chartConfig={{
-                    ...miniChartConfig,
-                    color: (opacity = 1) => `rgba(179, 211, 210, ${opacity})`,
-                  }}
-                  bezier
-                  withHorizontalLabels={false}
-                  withVerticalLabels={false}
-                  withDots={false}
-                  withInnerLines={false}
-                  withOuterLines={false}
-                  style={styles.chart}
-                />
-              </View>
+              {evolutionData.length > 0 && (
+                <View style={styles.miniChart}>
+                  <LineChart
+                    data={{
+                      labels: [],
+                      datasets: [
+                        {
+                          data: evolutionData.slice(0, 7).map((d) => d.value),
+                        },
+                      ],
+                    }}
+                    width={screenWidth - 136}
+                    height={32}
+                    chartConfig={{
+                      ...miniChartConfig,
+                      color: (opacity = 1) => `rgba(179, 211, 210, ${opacity})`,
+                    }}
+                    bezier
+                    withHorizontalLabels={false}
+                    withVerticalLabels={false}
+                    withDots={false}
+                    withInnerLines={false}
+                    withOuterLines={false}
+                    style={styles.chart}
+                  />
+                </View>
+              )}
             </View>
           </View>
 
@@ -151,31 +166,33 @@ export function SuiviScreen() {
                 Meilleure régularité en soirée (85%)
               </Text>
               {/* Mini sparkline */}
-              <View style={styles.miniChart}>
-                <LineChart
-                  data={{
-                    labels: [],
-                    datasets: [
-                      {
-                        data: evolutionData.slice(3, 10).map((d) => d.value),
-                      },
-                    ],
-                  }}
-                  width={screenWidth - 136}
-                  height={32}
-                  chartConfig={{
-                    ...miniChartConfig,
-                    color: (opacity = 1) => `rgba(20, 39, 45, ${opacity})`,
-                  }}
-                  bezier
-                  withHorizontalLabels={false}
-                  withVerticalLabels={false}
-                  withDots={false}
-                  withInnerLines={false}
-                  withOuterLines={false}
-                  style={styles.chart}
-                />
-              </View>
+              {evolutionData.length > 0 && (
+                <View style={styles.miniChart}>
+                  <LineChart
+                    data={{
+                      labels: [],
+                      datasets: [
+                        {
+                          data: evolutionData.slice(3, 10).map((d) => d.value),
+                        },
+                      ],
+                    }}
+                    width={screenWidth - 136}
+                    height={32}
+                    chartConfig={{
+                      ...miniChartConfig,
+                      color: (opacity = 1) => `rgba(20, 39, 45, ${opacity})`,
+                    }}
+                    bezier
+                    withHorizontalLabels={false}
+                    withVerticalLabels={false}
+                    withDots={false}
+                    withInnerLines={false}
+                    withOuterLines={false}
+                    style={styles.chart}
+                  />
+                </View>
+              )}
             </View>
           </View>
         </View>

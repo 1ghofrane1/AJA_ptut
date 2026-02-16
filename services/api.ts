@@ -1,7 +1,8 @@
 import AsyncStorage from "@react-native-async-storage/async-storage";
 import axios from "axios";
 
-export const API_BASE_URL = "http://127.0.0.1:8000";
+// Use environment variable if available, fallback to localhost
+export const API_BASE_URL = process.env.EXPO_PUBLIC_API_URL || "http://127.0.0.1:8000";
 export const TOKEN_KEY = "aja_token";
 
 export const api = axios.create({
@@ -82,4 +83,40 @@ export async function saveToken(token: string) {
 
 export async function clearToken() {
   await AsyncStorage.removeItem(TOKEN_KEY);
+}
+
+// ============================================
+// PROGRESS TRACKING
+// ============================================
+
+export type ProgressResponse = {
+  today_progress: number;
+  weekly_data: Array<{ day: string; completed: boolean }>;
+  adherence_data: boolean[];
+  evolution_data: Array<{ day: number; value: number }>;
+  monthly_data: Array<{ day: number; intensity: number }>;
+  daily_intakes: Array<{ time: string; name: string; taken: boolean }>;
+};
+
+export async function getProgress() {
+  const { data } = await api.get<ProgressResponse>("/tracking/progress");
+  return data;
+}
+
+// ============================================
+// DASHBOARD
+// ============================================
+
+export type DashboardResponse = {
+  user_name: string;
+  today_progress: number;
+  supplements_taken: number;
+  supplements_total: number;
+  weekly_data: Array<{ day: string; completed: boolean }>;
+  adherence_data: boolean[];
+};
+
+export async function getDashboard() {
+  const { data } = await api.get<DashboardResponse>("/dashboard");
+  return data;
 }

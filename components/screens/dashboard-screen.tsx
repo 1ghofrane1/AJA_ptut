@@ -1,24 +1,49 @@
 import { Plus, Shield, Sun, Target, TrendingUp } from "lucide-react-native";
-import { ScrollView, StyleSheet, Text, TouchableOpacity, View } from "react-native";
+import { useEffect, useState } from "react";
+import { ActivityIndicator, ScrollView, StyleSheet, Text, TouchableOpacity, View } from "react-native";
 import Svg, { Circle } from "react-native-svg";
+import { getDashboard, type DashboardResponse } from "@/services/api";
 
 interface DashboardScreenProps {
   userName?: string;
 }
 
-export function DashboardScreen({ userName = "Marie" }: DashboardScreenProps) {
-  // Mock data
-  const todayProgress = 75;
-  const weeklyData = [
-    { day: "L", completed: true },
-    { day: "M", completed: true },
-    { day: "M", completed: true },
-    { day: "J", completed: false },
-    { day: "V", completed: true },
-    { day: "S", completed: false },
-    { day: "D", completed: false },
-  ];
-  const adherenceData = [true, true, true, false, true, true, true];
+export function DashboardScreen({ userName }: DashboardScreenProps) {
+  const [loading, setLoading] = useState(true);
+  const [dashboardData, setDashboardData] = useState<DashboardResponse | null>(null);
+
+  useEffect(() => {
+    loadDashboard();
+  }, []);
+
+  const loadDashboard = async () => {
+    try {
+      setLoading(true);
+      const data = await getDashboard();
+      setDashboardData(data);
+    } catch (error) {
+      console.error('Failed to load dashboard:', error);
+      // Keep showing UI with fallback data
+    } finally {
+      setLoading(false);
+    }
+  };
+
+  // Use data from backend, or fallback to defaults
+  const displayName = dashboardData?.user_name || userName || "User";
+  const todayProgress = dashboardData?.today_progress || 0;
+  const supplementsTaken = dashboardData?.supplements_taken || 0;
+  const supplementsTotal = dashboardData?.supplements_total || 3;
+  const weeklyData = dashboardData?.weekly_data || [];
+  const adherenceData = dashboardData?.adherence_data || [];
+
+  if (loading) {
+    return (
+      <View style={[styles.container, { justifyContent: 'center', alignItems: 'center' }]}>
+        <ActivityIndicator size="large" color="#7ea69d" />
+      </View>
+    );
+  }
 
   const radius = 28;
   const circumference = 2 * Math.PI * radius;
@@ -31,10 +56,10 @@ export function DashboardScreen({ userName = "Marie" }: DashboardScreenProps) {
         <View style={styles.headerContent}>
           <View>
             <Text style={styles.greeting}>Bonjour,</Text>
-            <Text style={styles.userName}>{userName}</Text>
+            <Text style={styles.userName}>{displayName}</Text>
           </View>
           <View style={styles.avatar}>
-            <Text style={styles.avatarText}>M</Text>
+            <Text style={styles.avatarText}>{displayName.charAt(0).toUpperCase()}</Text>
           </View>
         </View>
       </View>
@@ -57,7 +82,7 @@ export function DashboardScreen({ userName = "Marie" }: DashboardScreenProps) {
                   <Sun size={20} color="#7ea69d" />
                 </View>
                 <View>
-                  <Text style={styles.infoText}>3 compléments</Text>
+                  <Text style={styles.infoText}>{supplementsTotal} compléments</Text>
                   <Text style={styles.infoSubtext}>À prendre aujourd'hui</Text>
                 </View>
               </View>
@@ -92,7 +117,7 @@ export function DashboardScreen({ userName = "Marie" }: DashboardScreenProps) {
           <View style={styles.progressHeader}>
             <View>
               <Text style={styles.progressTitle}>Progression du jour</Text>
-              <Text style={styles.progressSubtext}>2 sur 3 compléments pris</Text>
+              <Text style={styles.progressSubtext}>{supplementsTaken} sur {supplementsTotal} compléments pris</Text>
             </View>
             <View style={styles.circularProgress}>
               {/* Circular progress */}

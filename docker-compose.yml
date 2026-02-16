@@ -1,0 +1,47 @@
+services:
+  # Frontend Expo App
+  app:
+    build:
+      context: .
+      dockerfile: Dockerfile
+    container_name: myaja-app
+    ports:
+      - "19006:19006"  # Expo web port
+      - "8081:8081"    # Metro bundler
+      - "19000:19000"  # Expo dev server
+      - "19001:19001"  # Expo dev server (alternate)
+      - "19002:19002"  # Expo dev server (alternate)
+    volumes:
+      - .:/app
+      - /app/node_modules
+      - /app/.expo
+    environment:
+      - EXPO_DEVTOOLS_LISTEN_ADDRESS=0.0.0.0
+      - REACT_NATIVE_PACKAGER_HOSTNAME=10.0.0.46
+      - NODE_ENV=development
+      - EXPO_PUBLIC_API_URL=http://10.0.0.46:8000
+    stdin_open: true
+    tty: true
+    networks:
+      - myaja-network
+
+  # Backend API (Mock server for development)
+  backend:
+    build:
+      context: ./backend
+      dockerfile: Dockerfile
+    container_name: myaja-backend
+    ports:
+      - "8000:8000"
+    volumes:
+      - ./backend:/app
+      - /app/node_modules
+    environment:
+      - NODE_ENV=development
+      - PORT=8000
+    networks:
+      - myaja-network
+
+networks:
+  myaja-network:
+    driver: bridge
