@@ -36,6 +36,13 @@ export type TokenResponse = {
   user: UserResponse;
 };
 
+export type DecideMeResponse = {
+  derived_input?: Record<string, any>;
+  input?: Record<string, any>;
+  decision?: Record<string, any>;
+  [key: string]: any;
+};
+
 export async function signup(email: string, password: string) {
   const { data } = await api.post<TokenResponse>("/auth/signup", {
     email,
@@ -61,6 +68,11 @@ export async function getMe(includePersonal = true) {
 
 export async function updateMyProfile(payload: any) {
   const { data } = await api.put<UserResponse>("/users/me/profile", payload);
+  return data;
+}
+
+export async function getDecisionForMe() {
+  const { data } = await api.get<DecideMeResponse>("/decide/me");
   return data;
 }
 
