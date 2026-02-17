@@ -38,6 +38,32 @@ type ObjectivePlan = {
   supplements: Supplement[];
 };
 
+type SupplementStatus = Supplement & {
+  isTaken: boolean;
+};
+
+type SupplementHistoryEntry = {
+  id: string;
+  supplementId: string;
+  supplementName: string;
+  objectiveKey: string;
+  objectiveLabel: string;
+  taken: boolean;
+  timestamp: string;
+};
+
+type BestDecisionSummary = {
+  product: string;
+  score: number | null;
+  coveredSymptoms: string[];
+};
+
+type SafetySummary = {
+  forbiddenProducts: string[];
+  unknownSymptoms: string[];
+  unknownConditions: string[];
+};
+
 type AnyRecord = Record<string, any>;
 
 const OBJECTIVE_LABELS: Record<string, string> = {
@@ -113,7 +139,8 @@ function objectiveLabel(goal: string) {
 
 function inferTiming(value: unknown): Timing {
   const normalized = typeof value === "string" ? value.toLowerCase() : "";
-  const hasMorning = normalized.includes("morning") || normalized.includes("matin");
+  const hasMorning =
+    normalized.includes("morning") || normalized.includes("matin");
   const hasEvening =
     normalized.includes("evening") ||
     normalized.includes("night") ||
@@ -155,8 +182,13 @@ function mapRawRecommendationToSupplement(
         : null;
 
   const dosage =
-    firstString(raw.posologie, raw.dosage, raw.dose, raw.quantity, raw.quantite) ??
-    (scoreValue !== null ? `Score: ${scoreValue}` : "A définir");
+    firstString(
+      raw.posologie,
+      raw.dosage,
+      raw.dose,
+      raw.quantity,
+      raw.quantite,
+    ) ?? (scoreValue !== null ? `Score: ${scoreValue}` : "A définir");
 
   const reason =
     firstString(
@@ -243,7 +275,9 @@ function extractFlatRecommendations(root: AnyRecord) {
   ];
   const found = candidates.find((candidate) => Array.isArray(candidate));
   if (!Array.isArray(found)) return [];
-  return found.map((item) => asRecord(item)).filter((item): item is AnyRecord => Boolean(item));
+  return found
+    .map((item) => asRecord(item))
+    .filter((item): item is AnyRecord => Boolean(item));
 }
 
 function extractGroupedRecommendations(data: unknown) {
@@ -317,7 +351,8 @@ function extractObjectivesFromDecisionResponse(data: unknown) {
   if (!root) return [];
 
   const decision = asRecord(root.decision) ?? {};
-  const derivedInput = asRecord(root.derived_input) ?? asRecord(root.input) ?? {};
+  const derivedInput =
+    asRecord(root.derived_input) ?? asRecord(root.input) ?? {};
   const decisionInput = asRecord(decision.input) ?? {};
 
   return dedupeKeepOrder([
@@ -335,10 +370,100 @@ function extractObjectivesFromDecisionResponse(data: unknown) {
   ]);
 }
 
+function extractBestDecisionSummary(data: unknown): BestDecisionSummary | null {
+  const root = asRecord(data);
+  if (!root) return null;
+
+  const decision = asRecord(root.decision) ?? {};
+  const bestDecision = asRecord(decision.best_decision) ?? asRecord(root.best_decision);
+  if (!bestDecision) return null;
+
+  const product =
+    firstString(
+      bestDecision.produit,
+      bestDecision.product,
+      bestDecision.nom,
+      bestDecision.name,
+    ) ?? null;
+
+  if (!product) return null;
+
+  const score =
+    typeof bestDecision.score === "number"
+      ? bestDecision.score
+      : typeof bestDecision.score === "string" && bestDecision.score.trim()
+        ? Number(bestDecision.score)
+        : null;
+
+  return {
+    product,
+    score: score !== null && !Number.isNaN(score) ? score : null,
+    coveredSymptoms: dedupeKeepOrder(
+      toStringArray(
+        bestDecision.symptomes_couverts ?? bestDecision.covered_symptoms,
+      ),
+    ),
+  };
+}
+
+function extractSafetySummary(data: unknown): SafetySummary {
+  const root = asRecord(data);
+  if (!root) {
+    return {
+      forbiddenProducts: [],
+      unknownSymptoms: [],
+      unknownConditions: [],
+    };
+  }
+
+  const decision = asRecord(root.decision) ?? {};
+
+  return {
+    forbiddenProducts: dedupeKeepOrder(
+      toStringArray(
+        decision.forbidden_products ??
+          decision.forbiddenProducts ??
+          root.forbidden_products,
+      ),
+    ),
+    unknownSymptoms: dedupeKeepOrder(
+      toStringArray(
+        decision.unknown_symptomes ??
+          decision.unknown_symptoms ??
+          root.unknown_symptomes ??
+          root.unknown_symptoms,
+      ),
+    ),
+    unknownConditions: dedupeKeepOrder(
+      toStringArray(
+        decision.unknown_conditions ??
+          decision.conditions_inconnues ??
+          root.unknown_conditions,
+      ),
+    ),
+  };
+}
+
+function formatHistoryTime(isoTimestamp: string) {
+  const date = new Date(isoTimestamp);
+  if (Number.isNaN(date.getTime())) return "";
+
+  return date.toLocaleTimeString([], {
+    hour: "2-digit",
+    minute: "2-digit",
+  });
+}
+
 export function RecommendationsScreen() {
   const { token, user } = useAuth();
   const [expandedId, setExpandedId] = useState<string | null>(null);
+  const [selectedObjectiveKey, setSelectedObjectiveKey] = useState<
+    string | null
+  >(null);
   const [takenById, setTakenById] = useState<Record<string, boolean>>({});
+  const [supplementHistory, setSupplementHistory] = useState<
+    SupplementHistoryEntry[]
+  >([]);
   const [decisionData, setDecisionData] = useState<AnyRecord | null>(null);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
@@ -413,26 +538,115 @@ export function RecommendationsScreen() {
     });
   }, [decisionData, objectives]);
 
-  const allSupplements = useMemo(
-    () => objectivePlans.flatMap((plan) => plan.supplements),
-    [objectivePlans],
-  );
+  useEffect(() => {
+    if (!selectedObjectiveKey) return;
 
-  const takenCount = useMemo(
+    const stillExists = objectivePlans.some(
+      (plan) => normalizeObjectiveKey(plan.key) === selectedObjectiveKey,
+    );
+
+    if (!stillExists) {
+      setSelectedObjectiveKey(null);
+    }
+  }, [objectivePlans, selectedObjectiveKey]);
+
+  const visibleObjectivePlans = useMemo(() => {
+    if (!selectedObjectiveKey) return objectivePlans;
+
+    return objectivePlans.filter(
+      (plan) => normalizeObjectiveKey(plan.key) === selectedObjectiveKey,
+    );
+  }, [objectivePlans, selectedObjectiveKey]);
+
+  const visibleSupplementStatuses = useMemo(
     () =>
-      allSupplements.filter(
-        (supplement) =>
-          takenById[supplement.id] ?? supplement.taken ?? false,
-      ).length,
-    [allSupplements, takenById],
+      visibleObjectivePlans.flatMap((plan) =>
+        plan.supplements.map((supplement) => ({
+          ...supplement,
+          isTaken: takenById[supplement.id] ?? supplement.taken ?? false,
+        })),
+      ),
+    [visibleObjectivePlans, takenById],
   );
 
-  const toggleTaken = (id: string, currentState: boolean) => {
+  const takenSupplements = useMemo<SupplementStatus[]>(
+    () => visibleSupplementStatuses.filter((supplement) => supplement.isTaken),
+    [visibleSupplementStatuses],
+  );
+
+  const notTakenSupplements = useMemo<SupplementStatus[]>(
+    () => visibleSupplementStatuses.filter((supplement) => !supplement.isTaken),
+    [visibleSupplementStatuses],
+  );
+
+  const visibleHistory = useMemo(() => {
+    if (!selectedObjectiveKey) return supplementHistory;
+
+    return supplementHistory.filter(
+      (entry) => entry.objectiveKey === selectedObjectiveKey,
+    );
+  }, [supplementHistory, selectedObjectiveKey]);
+
+  const recentHistory = useMemo(
+    () => visibleHistory.slice(0, 8),
+    [visibleHistory],
+  );
+
+  const takenCount = takenSupplements.length;
+  const totalSupplements = visibleSupplementStatuses.length;
+  const pendingCount = Math.max(totalSupplements - takenCount, 0);
+  const takenPreview = takenSupplements.slice(0, 6);
+  const notTakenPreview = notTakenSupplements.slice(0, 6);
+  const remainingTaken = Math.max(takenSupplements.length - takenPreview.length, 0);
+  const remainingNotTaken = Math.max(
+    notTakenSupplements.length - notTakenPreview.length,
+    0,
+  );
+
+  const toggleTaken = (
+    supplement: Supplement,
+    currentState: boolean,
+    objectiveKey: string,
+    objectiveLabelText: string,
+  ) => {
+    const nextState = !currentState;
+
     setTakenById((prev) => ({
       ...prev,
-      [id]: !currentState,
+      [supplement.id]: nextState,
     }));
+
+    setSupplementHistory((prev) =>
+      [
+        {
+          id: `${supplement.id}-${Date.now()}`,
+          supplementId: supplement.id,
+          supplementName: supplement.name,
+          objectiveKey: normalizeObjectiveKey(objectiveKey),
+          objectiveLabel: objectiveLabelText,
+          taken: nextState,
+          timestamp: new Date().toISOString(),
+        },
+        ...prev,
+      ].slice(0, 100),
+    );
   };
+
+  const selectedObjectiveLabel = selectedObjectiveKey
+    ? objectiveLabel(selectedObjectiveKey)
+    : null;
+  const bestDecision = useMemo(
+    () => extractBestDecisionSummary(decisionData),
+    [decisionData],
+  );
+  const safetySummary = useMemo(
+    () => extractSafetySummary(decisionData),
+    [decisionData],
+  );
+  const hasSafetySignals =
+    safetySummary.forbiddenProducts.length > 0 ||
+    safetySummary.unknownSymptoms.length > 0 ||
+    safetySummary.unknownConditions.length > 0;
 
   return (
     <ScrollView
@@ -447,12 +661,52 @@ export function RecommendationsScreen() {
       <View style={styles.mainContent}>
         <View style={styles.card}>
           <Text style={styles.cardTitle}>Vos objectifs</Text>
+          <Text style={styles.cardSubtitle}>
+            Touchez un objectif pour filtrer son plan de supplementation.
+          </Text>
           {objectives.length > 0 ? (
             <View style={styles.goalsContainer}>
+              <TouchableOpacity
+                onPress={() => setSelectedObjectiveKey(null)}
+                style={[
+                  styles.goalBadge,
+                  selectedObjectiveKey === null && styles.goalBadgeActive,
+                ]}
+              >
+                <Text
+                  style={[
+                    styles.goalLabel,
+                    selectedObjectiveKey === null && styles.goalLabelActive,
+                  ]}
+                >
+                  Tous
+                </Text>
+              </TouchableOpacity>
               {objectives.map((goal) => (
-                <View key={goal} style={styles.goalBadge}>
-                  <Text style={styles.goalLabel}>{objectiveLabel(goal)}</Text>
-                </View>
+                <TouchableOpacity
+                  key={goal}
+                  onPress={() => {
+                    const normalizedGoal = normalizeObjectiveKey(goal);
+                    setSelectedObjectiveKey((prev) =>
+                      prev === normalizedGoal ? null : normalizedGoal,
+                    );
+                  }}
+                  style={[
+                    styles.goalBadge,
+                    selectedObjectiveKey === normalizeObjectiveKey(goal) &&
+                      styles.goalBadgeActive,
+                  ]}
+                >
+                  <Text
+                    style={[
+                      styles.goalLabel,
+                      selectedObjectiveKey === normalizeObjectiveKey(goal) &&
+                        styles.goalLabelActive,
+                    ]}
+                  >
+                    {objectiveLabel(goal)}
+                  </Text>
+                </TouchableOpacity>
               ))}
             </View>
           ) : (
@@ -460,7 +714,104 @@ export function RecommendationsScreen() {
               Aucun objectif trouvé dans votre profil pour le moment.
             </Text>
           )}
+          {selectedObjectiveLabel && (
+            <Text style={styles.filterInfo}>
+              Filtre actif: {selectedObjectiveLabel}
+            </Text>
+          )}
         </View>
+
+        {!loading && !error && (
+          <View style={styles.overviewCard}>
+            <View style={styles.overviewItem}>
+              <Text style={styles.overviewValue}>
+                {visibleObjectivePlans.length}
+              </Text>
+              <Text style={styles.overviewLabel}>Objectifs</Text>
+            </View>
+            <View style={styles.overviewDivider} />
+            <View style={styles.overviewItem}>
+              <Text style={styles.overviewValue}>{takenCount}</Text>
+              <Text style={styles.overviewLabel}>Pris</Text>
+            </View>
+            <View style={styles.overviewDivider} />
+            <View style={styles.overviewItem}>
+              <Text style={styles.overviewValue}>{pendingCount}</Text>
+              <Text style={styles.overviewLabel}>A prendre</Text>
+            </View>
+          </View>
+        )}
+
+        {!loading && !error && bestDecision && (
+          <View style={styles.bestCard}>
+            <Text style={styles.bestTitle}>Meilleure recommandation</Text>
+            <Text style={styles.bestProduct}>{bestDecision.product}</Text>
+            <View style={styles.bestMetaRow}>
+              {bestDecision.score !== null && (
+                <View style={styles.bestBadge}>
+                  <Text style={styles.bestBadgeText}>
+                    Score {bestDecision.score}
+                  </Text>
+                </View>
+              )}
+              {bestDecision.coveredSymptoms.map((symptom) => (
+                <View key={`best-${symptom}`} style={styles.bestSymptomBadge}>
+                  <Text style={styles.bestSymptomText}>
+                    {objectiveLabel(symptom)}
+                  </Text>
+                </View>
+              ))}
+            </View>
+          </View>
+        )}
+
+        {!loading && !error && hasSafetySignals && (
+          <View style={styles.safetyCard}>
+            <Text style={styles.safetyTitle}>Securite et qualite des donnees</Text>
+
+            {safetySummary.forbiddenProducts.length > 0 && (
+              <View style={styles.safetySection}>
+                <Text style={styles.safetySectionTitle}>
+                  Produits a eviter ({safetySummary.forbiddenProducts.length})
+                </Text>
+                {safetySummary.forbiddenProducts.map((product) => (
+                  <View key={`forbidden-${product}`} style={styles.safetyRow}>
+                    <AlertTriangle size={14} color="#b05f2d" />
+                    <Text style={styles.safetyText}>{product}</Text>
+                  </View>
+                ))}
+              </View>
+            )}
+
+            {safetySummary.unknownConditions.length > 0 && (
+              <View style={styles.safetySection}>
+                <Text style={styles.safetySectionTitle}>
+                  Conditions non reconnues ({safetySummary.unknownConditions.length})
+                </Text>
+                <Text style={styles.safetyHint}>
+                  Verifiez l orthographe ou completez le mapping backend.
+                </Text>
+                <Text style={styles.safetyListText}>
+                  {safetySummary.unknownConditions.join(", ")}
+                </Text>
+              </View>
+            )}
+
+            {safetySummary.unknownSymptoms.length > 0 && (
+              <View style={styles.safetySection}>
+                <Text style={styles.safetySectionTitle}>
+                  Symptomes non reconnus ({safetySummary.unknownSymptoms.length})
+                </Text>
+                <Text style={styles.safetyHint}>
+                  Ces symptomes ne sont pas utilises dans la decision actuelle.
+                </Text>
+                <Text style={styles.safetyListText}>
+                  {safetySummary.unknownSymptoms.join(", ")}
+                </Text>
+              </View>
+            )}
+          </View>
+        )}
 
         {loading ? (
           <View style={styles.statusCard}>
@@ -477,17 +828,27 @@ export function RecommendationsScreen() {
             <Text style={styles.sectionTitle}>
               Plan de supplémentation par objectif
             </Text>
+            <Text style={styles.sectionSubtitle}>
+              Cochez les complements pris pour suivre votre progression.
+            </Text>
 
-            {objectivePlans.length === 0 ? (
+            {visibleObjectivePlans.length === 0 ? (
               <View style={styles.statusCard}>
                 <Text style={styles.statusText}>
                   Aucune recommandation disponible pour le moment.
                 </Text>
               </View>
             ) : (
-              objectivePlans.map((plan) => (
+              visibleObjectivePlans.map((plan) => (
                 <View key={plan.key} style={styles.objectiveSection}>
-                  <Text style={styles.objectiveTitle}>{plan.label}</Text>
+                  <View style={styles.objectiveHeader}>
+                    <Text style={styles.objectiveTitle}>{plan.label}</Text>
+                    <View style={styles.objectiveCountBadge}>
+                      <Text style={styles.objectiveCountText}>
+                        {plan.supplements.length}
+                      </Text>
+                    </View>
+                  </View>
 
                   {plan.supplements.length === 0 ? (
                     <View style={styles.emptyObjectiveCard}>
@@ -507,7 +868,12 @@ export function RecommendationsScreen() {
                             <View style={styles.supplementRow}>
                               <TouchableOpacity
                                 onPress={() =>
-                                  toggleTaken(supplement.id, isTaken)
+                                  toggleTaken(
+                                    supplement,
+                                    isTaken,
+                                    plan.key,
+                                    plan.label,
+                                  )
                                 }
                                 style={[
                                   styles.checkbox,
@@ -520,12 +886,37 @@ export function RecommendationsScreen() {
                               <View style={styles.supplementContent}>
                                 <View style={styles.supplementTopRow}>
                                   <View style={styles.supplementInfo}>
-                                    <Text style={styles.supplementName}>
-                                      {supplement.name}
-                                    </Text>
-                                    <Text style={styles.supplementDosage}>
-                                      {supplement.dosage}
-                                    </Text>
+                                    <View style={styles.supplementTitleRow}>
+                                      <Text style={styles.supplementName}>
+                                        {supplement.name}
+                                      </Text>
+                                      <View
+                                        style={[
+                                          styles.supplementStatusPill,
+                                          isTaken
+                                            ? styles.supplementStatusPillTaken
+                                            : styles.supplementStatusPillPending,
+                                        ]}
+                                      >
+                                        <Text
+                                          style={[
+                                            styles.supplementStatusText,
+                                            isTaken
+                                              ? styles.supplementStatusTextTaken
+                                              : styles.supplementStatusTextPending,
+                                          ]}
+                                        >
+                                          {isTaken ? "Pris" : "A prendre"}
+                                        </Text>
+                                      </View>
+                                    </View>
+                                    <View style={styles.supplementMetaRow}>
+                                      <View style={styles.supplementDosageBadge}>
+                                        <Text style={styles.supplementDosage}>
+                                          {supplement.dosage}
+                                        </Text>
+                                      </View>
+                                    </View>
                                   </View>
                                   <TouchableOpacity
                                     onPress={() =>
@@ -634,10 +1025,104 @@ export function RecommendationsScreen() {
           </View>
         )}
 
-        {!loading && !error && allSupplements.length > 0 && (
+        {!loading && !error && totalSupplements > 0 && (
+          <View style={styles.historyCard}>
+            <Text style={styles.historyTitle}>Historique des prises</Text>
+
+            <View style={styles.historyGroup}>
+              <Text style={styles.historyGroupTitle}>
+                Pris ({takenSupplements.length})
+              </Text>
+              {takenPreview.length > 0 ? (
+                <>
+                  {takenPreview.map((supplement) => (
+                    <View
+                      key={`taken-${supplement.id}`}
+                      style={styles.historyItemRow}
+                    >
+                      <View style={[styles.historyDot, styles.historyDotTaken]} />
+                      <Text style={styles.historyItem}>{supplement.name}</Text>
+                    </View>
+                  ))}
+                  {remainingTaken > 0 && (
+                    <Text style={styles.historyMore}>+{remainingTaken} autres</Text>
+                  )}
+                </>
+              ) : (
+                <Text style={styles.historyEmpty}>
+                  Aucun complément marqué comme pris.
+                </Text>
+              )}
+            </View>
+
+            <View style={styles.historyGroup}>
+              <Text style={styles.historyGroupTitle}>
+                Non pris ({notTakenSupplements.length})
+              </Text>
+              {notTakenPreview.length > 0 ? (
+                <>
+                  {notTakenPreview.map((supplement) => (
+                    <View
+                      key={`not-taken-${supplement.id}`}
+                      style={styles.historyItemRow}
+                    >
+                      <View style={[styles.historyDot, styles.historyDotPending]} />
+                      <Text style={styles.historyItem}>{supplement.name}</Text>
+                    </View>
+                  ))}
+                  {remainingNotTaken > 0 && (
+                    <Text style={styles.historyMore}>
+                      +{remainingNotTaken} autres
+                    </Text>
+                  )}
+                </>
+              ) : (
+                <Text style={styles.historyEmpty}>
+                  Tous les compléments affichés sont pris.
+                </Text>
+              )}
+            </View>
+
+            {recentHistory.length > 0 && (
+              <View style={styles.historyGroup}>
+                <Text style={styles.historyGroupTitle}>Dernières actions</Text>
+                {recentHistory.map((entry) => (
+                  <View key={entry.id} style={styles.historyActionRow}>
+                    <View
+                      style={[
+                        styles.historyActionBadge,
+                        entry.taken
+                          ? styles.historyActionBadgeTaken
+                          : styles.historyActionBadgePending,
+                      ]}
+                    >
+                      <Text
+                        style={[
+                          styles.historyActionText,
+                          entry.taken
+                            ? styles.historyActionTextTaken
+                            : styles.historyActionTextPending,
+                        ]}
+                      >
+                        {entry.taken ? "Pris" : "Non pris"}
+                      </Text>
+                    </View>
+                    <Text style={styles.historyItemMeta}>
+                      {entry.supplementName} - {entry.objectiveLabel} - {formatHistoryTime(entry.timestamp)}
+                    </Text>
+                  </View>
+                ))}
+              </View>
+            )}
+          </View>
+        )}
+
+        {!loading && !error && totalSupplements > 0 && (
           <View style={styles.summaryCard}>
             <Text style={styles.summaryText}>
-              {`${takenCount} sur ${allSupplements.length} compléments pris aujourd'hui`}
+              {`${takenCount} sur ${totalSupplements} compléments pris ${
+                selectedObjectiveKey ? "dans cet objectif" : "aujourd'hui"
+              }`}
             </Text>
           </View>
         )}
@@ -691,7 +1176,13 @@ const styles = StyleSheet.create({
     color: "#14272d",
     fontSize: 16,
     fontWeight: "600",
-    marginBottom: 12,
+    marginBottom: 6,
+  },
+  cardSubtitle: {
+    color: "#7ea69d",
+    fontSize: 13,
+    lineHeight: 18,
+    marginBottom: 14,
   },
   goalsContainer: {
     flexDirection: "row",
@@ -703,10 +1194,138 @@ const styles = StyleSheet.create({
     borderRadius: 20,
     paddingHorizontal: 16,
     paddingVertical: 8,
+    borderWidth: 1,
+    borderColor: "rgba(20, 39, 45, 0.08)",
+  },
+  goalBadgeActive: {
+    backgroundColor: "#14272d",
   },
   goalLabel: {
     fontSize: 14,
     color: "#14272d",
+  },
+  goalLabelActive: {
+    color: "white",
+  },
+  filterInfo: {
+    marginTop: 10,
+    color: "#7ea69d",
+    fontSize: 12,
+  },
+  overviewCard: {
+    backgroundColor: "#14272d",
+    borderRadius: 16,
+    paddingVertical: 14,
+    paddingHorizontal: 10,
+    flexDirection: "row",
+    alignItems: "center",
+  },
+  overviewItem: {
+    flex: 1,
+    alignItems: "center",
+    gap: 2,
+  },
+  overviewValue: {
+    color: "white",
+    fontSize: 20,
+    fontWeight: "700",
+  },
+  overviewLabel: {
+    color: "#b3d3d2",
+    fontSize: 12,
+  },
+  overviewDivider: {
+    width: 1,
+    height: 28,
+    backgroundColor: "rgba(179, 211, 210, 0.35)",
+  },
+  bestCard: {
+    backgroundColor: "white",
+    borderRadius: 16,
+    padding: 18,
+    borderWidth: 1,
+    borderColor: "rgba(126, 166, 157, 0.24)",
+    gap: 10,
+  },
+  bestTitle: {
+    color: "#2f675c",
+    fontSize: 13,
+    fontWeight: "700",
+    textTransform: "uppercase",
+  },
+  bestProduct: {
+    color: "#14272d",
+    fontSize: 20,
+    fontWeight: "700",
+  },
+  bestMetaRow: {
+    flexDirection: "row",
+    flexWrap: "wrap",
+    gap: 8,
+    alignItems: "center",
+  },
+  bestBadge: {
+    backgroundColor: "#e7ede7",
+    borderRadius: 999,
+    paddingHorizontal: 10,
+    paddingVertical: 5,
+    borderWidth: 1,
+    borderColor: "rgba(126, 166, 157, 0.4)",
+  },
+  bestBadgeText: {
+    color: "#2f675c",
+    fontSize: 12,
+    fontWeight: "700",
+  },
+  bestSymptomBadge: {
+    backgroundColor: "rgba(20, 39, 45, 0.06)",
+    borderRadius: 999,
+    paddingHorizontal: 10,
+    paddingVertical: 5,
+  },
+  bestSymptomText: {
+    color: "#14272d",
+    fontSize: 12,
+    fontWeight: "600",
+  },
+  safetyCard: {
+    backgroundColor: "white",
+    borderRadius: 16,
+    padding: 18,
+    borderWidth: 1,
+    borderColor: "rgba(190, 162, 98, 0.35)",
+    gap: 12,
+  },
+  safetyTitle: {
+    color: "#14272d",
+    fontSize: 15,
+    fontWeight: "700",
+  },
+  safetySection: {
+    gap: 6,
+  },
+  safetySectionTitle: {
+    color: "#8b6b2f",
+    fontSize: 13,
+    fontWeight: "700",
+  },
+  safetyRow: {
+    flexDirection: "row",
+    alignItems: "center",
+    gap: 8,
+  },
+  safetyText: {
+    color: "#14272d",
+    fontSize: 13,
+    flex: 1,
+  },
+  safetyHint: {
+    color: "#7ea69d",
+    fontSize: 12,
+  },
+  safetyListText: {
+    color: "#14272d",
+    fontSize: 13,
   },
   supplementsSection: {
     gap: 12,
@@ -716,14 +1335,41 @@ const styles = StyleSheet.create({
     fontSize: 16,
     paddingHorizontal: 4,
   },
+  sectionSubtitle: {
+    color: "#7ea69d",
+    fontSize: 12,
+    paddingHorizontal: 4,
+    marginTop: -6,
+    marginBottom: 4,
+  },
   objectiveSection: {
     gap: 8,
+  },
+  objectiveHeader: {
+    flexDirection: "row",
+    alignItems: "center",
+    justifyContent: "space-between",
+    paddingHorizontal: 4,
   },
   objectiveTitle: {
     color: "#14272d",
     fontSize: 15,
     fontWeight: "600",
-    paddingHorizontal: 4,
+  },
+  objectiveCountBadge: {
+    minWidth: 26,
+    height: 26,
+    borderRadius: 13,
+    backgroundColor: "#e7ede7",
+    alignItems: "center",
+    justifyContent: "center",
+    borderWidth: 1,
+    borderColor: "rgba(20, 39, 45, 0.1)",
+  },
+  objectiveCountText: {
+    color: "#14272d",
+    fontSize: 12,
+    fontWeight: "700",
   },
   supplementCard: {
     backgroundColor: "white",
@@ -772,14 +1418,56 @@ const styles = StyleSheet.create({
   supplementInfo: {
     flex: 1,
   },
+  supplementTitleRow: {
+    flexDirection: "row",
+    alignItems: "center",
+    gap: 8,
+  },
   supplementName: {
     color: "#14272d",
-    fontSize: 16,
+    fontSize: 15,
     fontWeight: "600",
+    flex: 1,
+  },
+  supplementStatusPill: {
+    borderRadius: 999,
+    paddingHorizontal: 10,
+    paddingVertical: 4,
+    borderWidth: 1,
+  },
+  supplementStatusPillTaken: {
+    backgroundColor: "rgba(126, 166, 157, 0.18)",
+    borderColor: "rgba(126, 166, 157, 0.4)",
+  },
+  supplementStatusPillPending: {
+    backgroundColor: "rgba(223, 196, 133, 0.2)",
+    borderColor: "rgba(190, 162, 98, 0.4)",
+  },
+  supplementStatusText: {
+    fontSize: 11,
+    fontWeight: "700",
+  },
+  supplementStatusTextTaken: {
+    color: "#2f675c",
+  },
+  supplementStatusTextPending: {
+    color: "#8b6b2f",
+  },
+  supplementMetaRow: {
+    marginTop: 8,
+    flexDirection: "row",
+    alignItems: "center",
+  },
+  supplementDosageBadge: {
+    borderRadius: 10,
+    paddingHorizontal: 10,
+    paddingVertical: 5,
+    backgroundColor: "rgba(20, 39, 45, 0.06)",
   },
   supplementDosage: {
-    fontSize: 14,
+    fontSize: 12,
     color: "#7ea69d",
+    fontWeight: "600",
   },
   expandButton: {
     padding: 4,
@@ -907,4 +1595,91 @@ const styles = StyleSheet.create({
     color: "#7ea69d",
     fontSize: 13,
   },
+  historyCard: {
+    backgroundColor: "white",
+    borderRadius: 16,
+    padding: 20,
+    borderWidth: 1,
+    borderColor: "rgba(20, 39, 45, 0.05)",
+    gap: 14,
+  },
+  historyTitle: {
+    color: "#14272d",
+    fontSize: 16,
+    fontWeight: "600",
+  },
+  historyGroup: {
+    gap: 6,
+  },
+  historyGroupTitle: {
+    color: "#14272d",
+    fontSize: 14,
+    fontWeight: "600",
+  },
+  historyItem: {
+    color: "#14272d",
+    fontSize: 13,
+    flex: 1,
+  },
+  historyItemRow: {
+    flexDirection: "row",
+    alignItems: "center",
+    gap: 8,
+  },
+  historyDot: {
+    width: 8,
+    height: 8,
+    borderRadius: 4,
+  },
+  historyDotTaken: {
+    backgroundColor: "#7ea69d",
+  },
+  historyDotPending: {
+    backgroundColor: "#dfc485",
+  },
+  historyMore: {
+    color: "#7ea69d",
+    fontSize: 12,
+    marginTop: 2,
+  },
+  historyItemMeta: {
+    color: "#7ea69d",
+    fontSize: 12,
+    flex: 1,
+    lineHeight: 16,
+  },
+  historyActionRow: {
+    flexDirection: "row",
+    alignItems: "center",
+    gap: 8,
+  },
+  historyActionBadge: {
+    borderRadius: 999,
+    paddingHorizontal: 8,
+    paddingVertical: 3,
+    borderWidth: 1,
+  },
+  historyActionBadgeTaken: {
+    backgroundColor: "rgba(126, 166, 157, 0.18)",
+    borderColor: "rgba(126, 166, 157, 0.45)",
+  },
+  historyActionBadgePending: {
+    backgroundColor: "rgba(223, 196, 133, 0.2)",
+    borderColor: "rgba(190, 162, 98, 0.45)",
+  },
+  historyActionText: {
+    fontSize: 11,
+    fontWeight: "700",
+  },
+  historyActionTextTaken: {
+    color: "#2f675c",
+  },
+  historyActionTextPending: {
+    color: "#8b6b2f",
+  },
+  historyEmpty: {
+    color: "#7ea69d",
+    fontSize: 13,
+  },
 });
+
