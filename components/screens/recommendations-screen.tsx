@@ -1,5 +1,12 @@
 import { useAuth } from "@/context/auth";
-import { getDecisionForMe } from "@/services/api";
+import {
+  getDecisionForMe,
+  getMyRecommendations,
+  getRecommendationIntakes,
+  saveRecommendationIntakes,
+  type RecommendationResponse,
+  type RecommendationIntakeResponse,
+} from "@/services/api";
 import {
   AlertTriangle,
   Check,
@@ -12,6 +19,7 @@ import {
 import { useEffect, useMemo, useState } from "react";
 import {
   ActivityIndicator,
+  Alert,
   ScrollView,
   StyleSheet,
   Text,
@@ -50,18 +58,6 @@ type SupplementHistoryEntry = {
   objectiveLabel: string;
   taken: boolean;
   timestamp: string;
-};
-
-type BestDecisionSummary = {
-  product: string;
-  score: number | null;
-  coveredSymptoms: string[];
-};
-
-type SafetySummary = {
-  forbiddenProducts: string[];
-  unknownSymptoms: string[];
-  unknownConditions: string[];
 };
 
 type AnyRecord = Record<string, any>;
@@ -370,77 +366,63 @@ function extractObjectivesFromDecisionResponse(data: unknown) {
   ]);
 }
 
-function extractBestDecisionSummary(data: unknown): BestDecisionSummary | null {
+function extractSavedRecommendationId(data: unknown): string | null {
   const root = asRecord(data);
   if (!root) return null;
 
-  const decision = asRecord(root.decision) ?? {};
-  const bestDecision = asRecord(decision.best_decision) ?? asRecord(root.best_decision);
-  if (!bestDecision) return null;
+  const id = firstString(
+    root.saved_recommendation_id,
+    root.recommendation_id,
+    root.recommendationId,
+    root.id,
+  );
+  return id ?? null;
+}
 
-  const product =
-    firstString(
-      bestDecision.produit,
-      bestDecision.product,
-      bestDecision.nom,
-      bestDecision.name,
-    ) ?? null;
+function formatHistoryDateTime(isoTimestamp: string) {
+  const date = new Date(isoTimestamp);
+  if (Number.isNaN(date.getTime())) return isoTimestamp;
+  return date.toLocaleString([], {
+    year: "numeric",
+    month: "2-digit",
+    day: "2-digit",
+    hour: "2-digit",
+    minute: "2-digit",
+  });
+}
 
-  if (!product) return null;
-
-  const score =
-    typeof bestDecision.score === "number"
-      ? bestDecision.score
-      : typeof bestDecision.score === "string" && bestDecision.score.trim()
-        ? Number(bestDecision.score)
-        : null;
+function mapIntakeToHistoryEntry(
+  intake: RecommendationIntakeResponse,
+  fallbackIndex = 0,
+): SupplementHistoryEntry {
+  const objectiveKeyRaw = intake.objective_key?.trim() || "autres";
+  const objectiveKey = normalizeObjectiveKey(objectiveKeyRaw);
+  const objectiveLabelText =
+    intake.objective_label?.trim() || objectiveLabel(objectiveKeyRaw);
+  const supplementId =
+    intake.supplement_id?.trim() || `${objectiveKey}::${intake.supplement_name}`;
+  const timestamp = intake.taken_at || intake.created_at;
 
   return {
-    product,
-    score: score !== null && !Number.isNaN(score) ? score : null,
-    coveredSymptoms: dedupeKeepOrder(
-      toStringArray(
-        bestDecision.symptomes_couverts ?? bestDecision.covered_symptoms,
-      ),
-    ),
+    id: intake.id || `${supplementId}-${timestamp}-${fallbackIndex}`,
+    supplementId,
+    supplementName: intake.supplement_name,
+    objectiveKey,
+    objectiveLabel: objectiveLabelText,
+    taken: Boolean(intake.taken),
+    timestamp,
   };
 }
 
-function extractSafetySummary(data: unknown): SafetySummary {
-  const root = asRecord(data);
-  if (!root) {
-    return {
-      forbiddenProducts: [],
-      unknownSymptoms: [],
-      unknownConditions: [],
-    };
-  }
-
-  const decision = asRecord(root.decision) ?? {};
-
+function normalizeRecommendationDoc(
+  recommendation: RecommendationResponse,
+): AnyRecord {
   return {
-    forbiddenProducts: dedupeKeepOrder(
-      toStringArray(
-        decision.forbidden_products ??
-          decision.forbiddenProducts ??
-          root.forbidden_products,
-      ),
-    ),
-    unknownSymptoms: dedupeKeepOrder(
-      toStringArray(
-        decision.unknown_symptomes ??
-          decision.unknown_symptoms ??
-          root.unknown_symptomes ??
-          root.unknown_symptoms,
-      ),
-    ),
-    unknownConditions: dedupeKeepOrder(
-      toStringArray(
-        decision.unknown_conditions ??
-          decision.conditions_inconnues ??
-          root.unknown_conditions,
-      ),
-    ),
+    decision: asRecord(recommendation.decision) ?? {},
+    input: asRecord(recommendation.input) ?? {},
+    saved_recommendation_id: recommendation.id,
+    saved_at: recommendation.created_at,
+    source: recommendation.source,
   };
 }
 
@@ -461,12 +443,19 @@ export function RecommendationsScreen() {
     string | null
   >(null);
   const [takenById, setTakenById] = useState<Record<string, boolean>>({});
+  const [submittedTakenById, setSubmittedTakenById] = useState<
+    Record<string, boolean>
+  >({});
+  const [pendingTakenAtById, setPendingTakenAtById] = useState<
+    Record<string, string>
+  >({});
   const [supplementHistory, setSupplementHistory] = useState<
     SupplementHistoryEntry[]
   >([]);
   const [decisionData, setDecisionData] = useState<AnyRecord | null>(null);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
+  const [isSubmittingTake, setIsSubmittingTake] = useState(false);
 
   useEffect(() => {
     let isMounted = true;
@@ -474,6 +463,10 @@ export function RecommendationsScreen() {
     const loadDecision = async () => {
       if (!token) {
         setDecisionData(null);
+        setTakenById({});
+        setSubmittedTakenById({});
+        setPendingTakenAtById({});
+        setSupplementHistory([]);
         setLoading(false);
         return;
       }
@@ -481,12 +474,66 @@ export function RecommendationsScreen() {
       try {
         setLoading(true);
         setError(null);
-        const data = await getDecisionForMe();
+        const latestRecommendations = await getMyRecommendations(1);
+        const latestRecommendation = latestRecommendations[0] ?? null;
+
+        let data: AnyRecord;
+        if (!latestRecommendation) {
+          data = await getDecisionForMe();
+        } else {
+          const userUpdatedAtMs = user?.updated_at
+            ? new Date(user.updated_at).getTime()
+            : Number.NaN;
+          const recommendationCreatedAtMs = latestRecommendation.created_at
+            ? new Date(latestRecommendation.created_at).getTime()
+            : Number.NaN;
+
+          const shouldRecompute =
+            Number.isFinite(userUpdatedAtMs) &&
+            Number.isFinite(recommendationCreatedAtMs) &&
+            recommendationCreatedAtMs < userUpdatedAtMs;
+
+          data = shouldRecompute
+            ? await getDecisionForMe()
+            : normalizeRecommendationDoc(latestRecommendation);
+        }
+
+        const recommendationId = extractSavedRecommendationId(data);
+
+        let savedIntakes: RecommendationIntakeResponse[] = [];
+        if (recommendationId) {
+          try {
+            savedIntakes = await getRecommendationIntakes(recommendationId, 500);
+          } catch {
+            savedIntakes = [];
+          }
+        }
+
+        const latestTakenById: Record<string, boolean> = {};
+        for (const intake of savedIntakes) {
+          const supplementId = intake.supplement_id?.trim();
+          if (!supplementId) continue;
+          if (latestTakenById[supplementId] !== undefined) continue;
+          latestTakenById[supplementId] = Boolean(intake.taken);
+        }
+
+        const historyFromDb = savedIntakes
+          .map((intake, index) => mapIntakeToHistoryEntry(intake, index))
+          .slice(0, 100);
+
         if (!isMounted) return;
         setDecisionData(data);
+        setTakenById(latestTakenById);
+        setSubmittedTakenById(latestTakenById);
+        setPendingTakenAtById({});
+        setSupplementHistory(historyFromDb);
       } catch (e: any) {
         if (!isMounted) return;
         setDecisionData(null);
+        setTakenById({});
+        setSubmittedTakenById({});
+        setPendingTakenAtById({});
+        setSupplementHistory([]);
         setError(
           e?.response?.data?.detail ??
             "Impossible de charger votre plan de supplémentation.",
@@ -591,6 +638,15 @@ export function RecommendationsScreen() {
     () => visibleHistory.slice(0, 8),
     [visibleHistory],
   );
+  const latestTakenAtBySupplementId = useMemo(() => {
+    const map: Record<string, string> = {};
+    for (const entry of supplementHistory) {
+      if (!entry.taken) continue;
+      if (map[entry.supplementId]) continue;
+      map[entry.supplementId] = entry.timestamp;
+    }
+    return map;
+  }, [supplementHistory]);
 
   const takenCount = takenSupplements.length;
   const totalSupplements = visibleSupplementStatuses.length;
@@ -603,50 +659,129 @@ export function RecommendationsScreen() {
     0,
   );
 
-  const toggleTaken = (
-    supplement: Supplement,
-    currentState: boolean,
-    objectiveKey: string,
-    objectiveLabelText: string,
-  ) => {
-    const nextState = !currentState;
+  const pendingTakeChanges = useMemo(() => {
+    const changes: {
+      supplement: Supplement;
+      objectiveKey: string;
+      objectiveLabel: string;
+      previousTaken: boolean;
+      nextTaken: boolean;
+    }[] = [];
 
+    for (const plan of objectivePlans) {
+      for (const supplement of plan.supplements) {
+        const nextTaken = takenById[supplement.id] ?? supplement.taken ?? false;
+        const previousTaken =
+          submittedTakenById[supplement.id] ?? supplement.taken ?? false;
+
+        if (nextTaken === previousTaken) continue;
+
+        changes.push({
+          supplement,
+          objectiveKey: normalizeObjectiveKey(plan.key),
+          objectiveLabel: plan.label,
+          previousTaken,
+          nextTaken,
+        });
+      }
+    }
+
+    return changes;
+  }, [objectivePlans, submittedTakenById, takenById]);
+
+  const pendingTakeChangesCount = pendingTakeChanges.length;
+  const savedRecommendationId = useMemo(
+    () => extractSavedRecommendationId(decisionData),
+    [decisionData],
+  );
+  const canSubmitTake =
+    pendingTakeChangesCount > 0 && !isSubmittingTake && Boolean(savedRecommendationId);
+
+  const toggleTaken = (supplement: Supplement, currentState: boolean) => {
+    const nextState = !currentState;
+    const toggledAt = new Date().toISOString();
     setTakenById((prev) => ({
       ...prev,
       [supplement.id]: nextState,
     }));
+    setPendingTakenAtById((prev) => ({
+      ...prev,
+      [supplement.id]: toggledAt,
+    }));
+  };
 
-    setSupplementHistory((prev) =>
-      [
-        {
-          id: `${supplement.id}-${Date.now()}`,
-          supplementId: supplement.id,
-          supplementName: supplement.name,
-          objectiveKey: normalizeObjectiveKey(objectiveKey),
-          objectiveLabel: objectiveLabelText,
-          taken: nextState,
-          timestamp: new Date().toISOString(),
-        },
-        ...prev,
-      ].slice(0, 100),
-    );
+  const submitTakenSupplements = async () => {
+    if (pendingTakeChangesCount === 0 || isSubmittingTake) return;
+
+    const recommendationId = savedRecommendationId;
+    if (!recommendationId) {
+      Alert.alert(
+        "Enregistrement indisponible",
+        "Aucune recommandation sauvegardee n'a ete trouvee pour cette session.",
+      );
+      return;
+    }
+
+    const submittedAt = new Date().toISOString();
+    const payload = pendingTakeChanges.map((change) => ({
+      supplement_id: change.supplement.id,
+      supplement_name: change.supplement.name,
+      objective_key: change.objectiveKey,
+      objective_label: change.objectiveLabel,
+      taken: change.nextTaken,
+      taken_at: pendingTakenAtById[change.supplement.id] ?? submittedAt,
+    }));
+
+    setIsSubmittingTake(true);
+
+    try {
+      const response = await saveRecommendationIntakes(recommendationId, payload);
+
+      setDecisionData((prev) => {
+        const prevRecord = asRecord(prev) ?? {};
+        return {
+          ...prevRecord,
+          saved_recommendation_id: response.recommendation_id,
+          decision: asRecord(response.decision) ?? prevRecord.decision ?? {},
+        };
+      });
+
+      setSubmittedTakenById((prev) => {
+        const next = { ...prev };
+        for (const plan of objectivePlans) {
+          for (const supplement of plan.supplements) {
+            next[supplement.id] = takenById[supplement.id] ?? supplement.taken ?? false;
+          }
+        }
+        return next;
+      });
+
+      setSupplementHistory((prev) => {
+        const entries = response.intakes.map((intake, index) =>
+          mapIntakeToHistoryEntry(intake, index),
+        );
+        return [...entries, ...prev].slice(0, 100);
+      });
+      setPendingTakenAtById({});
+
+      Alert.alert(
+        "Prises enregistrees",
+        `${pendingTakeChangesCount} modification${pendingTakeChangesCount > 1 ? "s" : ""} enregistree${pendingTakeChangesCount > 1 ? "s" : ""}.`,
+      );
+    } catch (e: any) {
+      Alert.alert(
+        "Erreur",
+        e?.response?.data?.detail ??
+          "Impossible d'enregistrer les prises pour le moment.",
+      );
+    } finally {
+      setIsSubmittingTake(false);
+    }
   };
 
   const selectedObjectiveLabel = selectedObjectiveKey
     ? objectiveLabel(selectedObjectiveKey)
     : null;
-  const bestDecision = useMemo(
-    () => extractBestDecisionSummary(decisionData),
-    [decisionData],
-  );
-  const safetySummary = useMemo(
-    () => extractSafetySummary(decisionData),
-    [decisionData],
-  );
-  const hasSafetySignals =
-    safetySummary.forbiddenProducts.length > 0 ||
-    safetySummary.unknownSymptoms.length > 0 ||
-    safetySummary.unknownConditions.length > 0;
 
   return (
     <ScrollView
@@ -742,77 +877,6 @@ export function RecommendationsScreen() {
           </View>
         )}
 
-        {!loading && !error && bestDecision && (
-          <View style={styles.bestCard}>
-            <Text style={styles.bestTitle}>Meilleure recommandation</Text>
-            <Text style={styles.bestProduct}>{bestDecision.product}</Text>
-            <View style={styles.bestMetaRow}>
-              {bestDecision.score !== null && (
-                <View style={styles.bestBadge}>
-                  <Text style={styles.bestBadgeText}>
-                    Score {bestDecision.score}
-                  </Text>
-                </View>
-              )}
-              {bestDecision.coveredSymptoms.map((symptom) => (
-                <View key={`best-${symptom}`} style={styles.bestSymptomBadge}>
-                  <Text style={styles.bestSymptomText}>
-                    {objectiveLabel(symptom)}
-                  </Text>
-                </View>
-              ))}
-            </View>
-          </View>
-        )}
-
-        {!loading && !error && hasSafetySignals && (
-          <View style={styles.safetyCard}>
-            <Text style={styles.safetyTitle}>Securite et qualite des donnees</Text>
-
-            {safetySummary.forbiddenProducts.length > 0 && (
-              <View style={styles.safetySection}>
-                <Text style={styles.safetySectionTitle}>
-                  Produits a eviter ({safetySummary.forbiddenProducts.length})
-                </Text>
-                {safetySummary.forbiddenProducts.map((product) => (
-                  <View key={`forbidden-${product}`} style={styles.safetyRow}>
-                    <AlertTriangle size={14} color="#b05f2d" />
-                    <Text style={styles.safetyText}>{product}</Text>
-                  </View>
-                ))}
-              </View>
-            )}
-
-            {safetySummary.unknownConditions.length > 0 && (
-              <View style={styles.safetySection}>
-                <Text style={styles.safetySectionTitle}>
-                  Conditions non reconnues ({safetySummary.unknownConditions.length})
-                </Text>
-                <Text style={styles.safetyHint}>
-                  Verifiez l orthographe ou completez le mapping backend.
-                </Text>
-                <Text style={styles.safetyListText}>
-                  {safetySummary.unknownConditions.join(", ")}
-                </Text>
-              </View>
-            )}
-
-            {safetySummary.unknownSymptoms.length > 0 && (
-              <View style={styles.safetySection}>
-                <Text style={styles.safetySectionTitle}>
-                  Symptomes non reconnus ({safetySummary.unknownSymptoms.length})
-                </Text>
-                <Text style={styles.safetyHint}>
-                  Ces symptomes ne sont pas utilises dans la decision actuelle.
-                </Text>
-                <Text style={styles.safetyListText}>
-                  {safetySummary.unknownSymptoms.join(", ")}
-                </Text>
-              </View>
-            )}
-          </View>
-        )}
-
         {loading ? (
           <View style={styles.statusCard}>
             <ActivityIndicator color="#7ea69d" />
@@ -829,7 +893,7 @@ export function RecommendationsScreen() {
               Plan de supplémentation par objectif
             </Text>
             <Text style={styles.sectionSubtitle}>
-              Cochez les complements pris pour suivre votre progression.
+              Cochez les complements pris puis validez avec le bouton Enregistrer.
             </Text>
 
             {visibleObjectivePlans.length === 0 ? (
@@ -861,6 +925,8 @@ export function RecommendationsScreen() {
                       const isExpanded = expandedId === supplement.id;
                       const isTaken =
                         takenById[supplement.id] ?? supplement.taken;
+                      const latestTakenAt =
+                        latestTakenAtBySupplementId[supplement.id];
 
                       return (
                         <View key={supplement.id} style={styles.supplementCard}>
@@ -868,11 +934,9 @@ export function RecommendationsScreen() {
                             <View style={styles.supplementRow}>
                               <TouchableOpacity
                                 onPress={() =>
-                                  toggleTaken(
+                                  void toggleTaken(
                                     supplement,
                                     isTaken,
-                                    plan.key,
-                                    plan.label,
                                   )
                                 }
                                 style={[
@@ -917,6 +981,11 @@ export function RecommendationsScreen() {
                                         </Text>
                                       </View>
                                     </View>
+                                    {latestTakenAt && (
+                                      <Text style={styles.supplementTakenTime}>
+                                        Derniere prise: {formatHistoryDateTime(latestTakenAt)}
+                                      </Text>
+                                    )}
                                   </View>
                                   <TouchableOpacity
                                     onPress={() =>
@@ -1022,6 +1091,45 @@ export function RecommendationsScreen() {
                 </View>
               ))
             )}
+          </View>
+        )}
+
+        {!loading && !error && totalSupplements > 0 && (
+          <View style={styles.submitCard}>
+            <View style={styles.submitHeaderRow}>
+              <View style={styles.submitHeaderText}>
+                <Text style={styles.submitTitle}>Valider mes prises</Text>
+                <Text style={styles.submitHint}>
+                  {!savedRecommendationId
+                    ? "Rechargez l'ecran pour activer la sauvegarde."
+                    : pendingTakeChangesCount > 0
+                    ? `${pendingTakeChangesCount} modification${pendingTakeChangesCount > 1 ? "s" : ""} en attente`
+                    : "Aucune modification en attente"}
+                </Text>
+              </View>
+              <View style={styles.submitCountBadge}>
+                <Text style={styles.submitCountText}>{pendingTakeChangesCount}</Text>
+              </View>
+            </View>
+
+            <TouchableOpacity
+              style={[
+                styles.submitButton,
+                !canSubmitTake && styles.submitButtonDisabled,
+              ]}
+              onPress={() => void submitTakenSupplements()}
+              disabled={!canSubmitTake}
+              activeOpacity={0.9}
+            >
+              {isSubmittingTake ? (
+                <ActivityIndicator size="small" color="white" />
+              ) : (
+                <Check size={16} color="white" />
+              )}
+              <Text style={styles.submitButtonText}>
+                {isSubmittingTake ? "Enregistrement..." : "Enregistrer mes prises"}
+              </Text>
+            </TouchableOpacity>
           </View>
         )}
 
@@ -1288,6 +1396,19 @@ const styles = StyleSheet.create({
     fontSize: 12,
     fontWeight: "600",
   },
+  bestTimesSection: {
+    marginTop: 2,
+    gap: 4,
+  },
+  bestTimesTitle: {
+    color: "#2f675c",
+    fontSize: 12,
+    fontWeight: "700",
+  },
+  bestTimesItem: {
+    color: "#14272d",
+    fontSize: 12,
+  },
   safetyCard: {
     backgroundColor: "white",
     borderRadius: 16,
@@ -1458,6 +1579,12 @@ const styles = StyleSheet.create({
     flexDirection: "row",
     alignItems: "center",
   },
+  supplementTakenTime: {
+    marginTop: 6,
+    color: "#2f675c",
+    fontSize: 12,
+    fontWeight: "600",
+  },
   supplementDosageBadge: {
     borderRadius: 10,
     paddingHorizontal: 10,
@@ -1553,6 +1680,70 @@ const styles = StyleSheet.create({
   learnMoreText: {
     fontSize: 14,
     color: "#7ea69d",
+  },
+  submitCard: {
+    backgroundColor: "white",
+    borderRadius: 16,
+    padding: 16,
+    borderWidth: 1,
+    borderColor: "rgba(20, 39, 45, 0.08)",
+    shadowColor: "#000",
+    shadowOffset: { width: 0, height: 2 },
+    shadowOpacity: 0.06,
+    shadowRadius: 4,
+    elevation: 2,
+    gap: 12,
+  },
+  submitHeaderRow: {
+    flexDirection: "row",
+    alignItems: "center",
+    justifyContent: "space-between",
+    gap: 10,
+  },
+  submitHeaderText: {
+    flex: 1,
+    gap: 2,
+  },
+  submitTitle: {
+    color: "#14272d",
+    fontSize: 15,
+    fontWeight: "700",
+  },
+  submitHint: {
+    color: "#7ea69d",
+    fontSize: 12,
+  },
+  submitCountBadge: {
+    minWidth: 28,
+    height: 28,
+    borderRadius: 14,
+    backgroundColor: "#14272d",
+    alignItems: "center",
+    justifyContent: "center",
+    paddingHorizontal: 8,
+  },
+  submitCountText: {
+    color: "white",
+    fontSize: 12,
+    fontWeight: "700",
+  },
+  submitButton: {
+    minHeight: 46,
+    borderRadius: 12,
+    backgroundColor: "#2f675c",
+    flexDirection: "row",
+    alignItems: "center",
+    justifyContent: "center",
+    gap: 8,
+    paddingHorizontal: 14,
+  },
+  submitButtonDisabled: {
+    backgroundColor: "#9ab7b0",
+  },
+  submitButtonText: {
+    color: "white",
+    fontSize: 14,
+    fontWeight: "700",
   },
   summaryCard: {
     backgroundColor: "#e7ede7",
