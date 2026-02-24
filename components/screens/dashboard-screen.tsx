@@ -6,9 +6,10 @@ import { getDashboard, type DashboardResponse } from "@/services/api";
 
 interface DashboardScreenProps {
   userName?: string;
+  onAddGoal?: () => void;
 }
 
-export function DashboardScreen({ userName }: DashboardScreenProps) {
+export function DashboardScreen({ userName, onAddGoal }: DashboardScreenProps) {
   const [loading, setLoading] = useState(true);
   const [dashboardData, setDashboardData] = useState<DashboardResponse | null>(null);
 
@@ -199,7 +200,7 @@ export function DashboardScreen({ userName }: DashboardScreenProps) {
         </View>
 
         {/* Add Goal Smart Entry */}
-        <TouchableOpacity style={styles.addButton}>
+        <TouchableOpacity style={styles.addButton} onPress={onAddGoal}>
           <Plus size={20} color="#7ea69d" />
           <Text style={styles.addButtonText}>Ajouter un objectif santé</Text>
         </TouchableOpacity>

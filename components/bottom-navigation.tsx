@@ -1,4 +1,9 @@
-import { BookOpen, FileText, Home, TrendingUp } from "lucide-react-native";
+import {
+  BookOpen,
+  FileText,
+  Home,
+  TrendingUp,
+} from "lucide-react-native";
 import { StyleSheet, Text, TouchableOpacity, View } from "react-native";
 
 interface BottomNavigationProps {
@@ -6,7 +11,10 @@ interface BottomNavigationProps {
   onTabChange: (tab: string) => void;
 }
 
-export function BottomNavigation({ activeTab, onTabChange }: BottomNavigationProps) {
+export function BottomNavigation({
+  activeTab,
+  onTabChange,
+}: BottomNavigationProps) {
   const tabs = [
     { id: "accueil", label: "Accueil", icon: Home },
     { id: "recommandations", label: "Recommandations", icon: FileText },

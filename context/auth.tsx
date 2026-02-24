@@ -11,6 +11,7 @@ import {
 import AsyncStorage from "@react-native-async-storage/async-storage";
 import React, {
   createContext,
+  useCallback,
   useContext,
   useEffect,
   useMemo,
@@ -29,6 +30,18 @@ type AuthState = {
 
 const AuthContext = createContext<AuthState | null>(null);
 
+function isUnauthorizedError(error: unknown) {
+  const status =
+    typeof error === "object" &&
+    error !== null &&
+    "response" in error &&
+    typeof (error as any).response === "object" &&
+    (error as any).response !== null
+      ? (error as any).response.status
+      : null;
+  return status === 401 || status === 403;
+}
+
 export function AuthProvider({ children }: { children: React.ReactNode }) {
   const [token, setToken] = useState<string | null>(null);
   const [user, setUser] = useState<UserResponse | null>(null);
@@ -42,44 +55,47 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
         try {
           const me = await getMe(true);
           setUser(me);
-        } catch {
-          await clearToken();
-          setToken(null);
-          setUser(null);
+        } catch (error: unknown) {
+          // Only clear persisted auth on explicit auth failures.
+          if (isUnauthorizedError(error)) {
+            await clearToken();
+            setToken(null);
+            setUser(null);
+          }
         }
       }
       setLoading(false);
     })();
   }, []);
 
-  const refreshMe = async () => {
+  const refreshMe = useCallback(async () => {
     if (!token) return null;
     const me = await getMe(true);
     setUser(me);
     return me;
-  };
+  }, [token]);
 
-  const loginWithEmail = async (email: string, password: string) => {
+  const loginWithEmail = useCallback(async (email: string, password: string) => {
     const res = await login(email, password);
     await saveToken(res.access_token);
     setToken(res.access_token);
     setUser(res.user);
     return res.user;
-  };
+  }, []);
 
-  const signupWithEmail = async (email: string, password: string) => {
+  const signupWithEmail = useCallback(async (email: string, password: string) => {
     const res = await signup(email, password);
     await saveToken(res.access_token);
     setToken(res.access_token);
     setUser(res.user);
     return res.user;
-  };
+  }, []);
 
-  const logout = async () => {
+  const logout = useCallback(async () => {
     await clearToken();
     setToken(null);
     setUser(null);
-  };
+  }, []);
 
   const value = useMemo(
     () => ({
@@ -91,7 +107,7 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
       logout,
       refreshMe,
     }),
-    [token, user, loading],
+    [token, user, loading, loginWithEmail, signupWithEmail, logout, refreshMe],
   );
 
   return <AuthContext.Provider value={value}>{children}</AuthContext.Provider>;

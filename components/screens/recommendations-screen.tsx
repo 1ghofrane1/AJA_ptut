@@ -63,23 +63,23 @@ type SupplementHistoryEntry = {
 type AnyRecord = Record<string, any>;
 
 const OBJECTIVE_LABELS: Record<string, string> = {
-  mood_depression_support: "Améliorer mon humeur",
-  stress_anxiety_support: "Gérer le stress et l'anxiété",
-  sleep_support: "Améliorer mon sommeil",
+  mood_depression_support: "Ameliorer mon humeur",
+  stress_anxiety_support: "Gerer le stress et l'anxiete",
+  sleep_support: "Ameliorer mon sommeil",
   weight_loss: "Perdre du poids",
-  appetite_control: "Contrôler mon appétit",
-  energy_fatigue: "Augmenter mon énergie",
-  focus_cognition: "Améliorer ma concentration et mémoire",
-  digestion_gut: "Améliorer ma digestion",
-  immune_support: "Renforcer mon immunité",
+  appetite_control: "Controler mon appetit",
+  energy_fatigue: "Augmenter mon energie",
+  focus_cognition: "Ameliorer ma concentration et memoire",
+  digestion_gut: "Ameliorer ma digestion",
+  immune_support: "Renforcer mon immunite",
   muscle_gain_strength: "Gagner en muscle et force",
-  pain_inflammation: "Réduire douleurs et inflammations",
-  migraine_headache: "Prévenir migraines et maux de tête",
+  pain_inflammation: "Reduire douleurs et inflammations",
+  migraine_headache: "Prevenir migraines et maux de tete",
   insomnia: "Insomnie",
-  depression: "Dépression",
+  depression: "Depression",
   stress: "Stress",
   fatigue: "Fatigue",
-  anxiety: "Anxiété",
+  anxiety: "Anxiete",
   migraine: "Migraine",
 };
 
@@ -102,6 +102,7 @@ function dedupeKeepOrder(values: string[]) {
   const seen = new Set<string>();
   return values.filter((value) => {
     const normalized = normalizeObjectiveKey(value);
+    if (!normalized) return false;
     if (seen.has(normalized)) return false;
     seen.add(normalized);
     return true;
@@ -115,10 +116,95 @@ function firstString(...values: unknown[]) {
   return null;
 }
 
-function normalizeObjectiveKey(value: string) {
-  return value.trim().toLowerCase();
+function normalizeTextToken(value: string) {
+  return value
+    .normalize("NFD")
+    .replace(/[\u0300-\u036f]/g, "")
+    .toLowerCase()
+    .replace(/[^a-z0-9]+/g, " ")
+    .trim();
 }
 
+function normalizeObjectiveKey(value: string) {
+  const token = normalizeTextToken(value);
+  if (!token) return "";
+
+  if (
+    token.includes("sleep support") ||
+    token.includes("sleep health") ||
+    token.includes("sommeil") ||
+    token.includes("insomni") ||
+    token.includes("sleep")
+  ) {
+    return "sleep_support";
+  }
+  if (
+    token.includes("stress") ||
+    token.includes("anxiete") ||
+    token.includes("anxiety")
+  ) {
+    return "stress_anxiety_support";
+  }
+  if (
+    token.includes("mood") ||
+    token.includes("humeur") ||
+    token.includes("depression")
+  ) {
+    return "mood_depression_support";
+  }
+  if (
+    token.includes("weight") ||
+    token.includes("poids") ||
+    token.includes("obesite") ||
+    token.includes("surpoids")
+  ) {
+    return "weight_loss";
+  }
+  if (token.includes("appetit") || token.includes("appetite")) {
+    return "appetite_control";
+  }
+  if (
+    token.includes("energie") ||
+    token.includes("energy") ||
+    token.includes("fatigue")
+  ) {
+    return "energy_fatigue";
+  }
+  if (
+    token.includes("focus") ||
+    token.includes("cognition") ||
+    token.includes("concentration") ||
+    token.includes("memoire")
+  ) {
+    return "focus_cognition";
+  }
+  if (
+    token.includes("digestion") ||
+    token.includes("digestive") ||
+    token.includes("intestin")
+  ) {
+    return "digestion_gut";
+  }
+  if (token.includes("immun")) {
+    return "immune_support";
+  }
+  if (token.includes("muscle") || token.includes("force")) {
+    return "muscle_gain_strength";
+  }
+  if (
+    token.includes("douleur") ||
+    token.includes("inflammation") ||
+    token.includes("arthrose") ||
+    token.includes("arthrite")
+  ) {
+    return "pain_inflammation";
+  }
+  if (token.includes("migraine") || token.includes("cephale")) {
+    return "migraine_headache";
+  }
+
+  return token.replace(/\s+/g, "_");
+}
 function prettifyObjectiveLabel(value: string) {
   const readable = value.replace(/_/g, " ").trim();
   if (!readable) return "Objectif";
@@ -126,10 +212,10 @@ function prettifyObjectiveLabel(value: string) {
 }
 
 function objectiveLabel(goal: string) {
+  const normalizedKey = normalizeObjectiveKey(goal);
   return (
-    OBJECTIVE_LABELS[goal] ??
-    OBJECTIVE_LABELS[normalizeObjectiveKey(goal)] ??
-    prettifyObjectiveLabel(goal)
+    OBJECTIVE_LABELS[normalizedKey] ??
+    prettifyObjectiveLabel(normalizedKey || goal)
   );
 }
 
@@ -184,7 +270,7 @@ function mapRawRecommendationToSupplement(
       raw.dose,
       raw.quantity,
       raw.quantite,
-    ) ?? (scoreValue !== null ? `Score: ${scoreValue}` : "A définir");
+    ) ?? (scoreValue !== null ? `Score: ${scoreValue}` : "A definir");
 
   const reason =
     firstString(
@@ -536,7 +622,7 @@ export function RecommendationsScreen() {
         setSupplementHistory([]);
         setError(
           e?.response?.data?.detail ??
-            "Impossible de charger votre plan de supplémentation.",
+            "Impossible de charger votre plan de supplementation.",
         );
       } finally {
         if (isMounted) setLoading(false);
@@ -561,28 +647,51 @@ export function RecommendationsScreen() {
     const groupedByNormalizedKey = new Map<string, AnyRecord[]>();
 
     for (const [key, recommendations] of Object.entries(grouped)) {
-      groupedByNormalizedKey.set(normalizeObjectiveKey(key), recommendations);
+      const normalizedKey = normalizeObjectiveKey(key);
+      if (!normalizedKey) continue;
+      if (!Array.isArray(recommendations) || recommendations.length === 0) continue;
+
+      const existing = groupedByNormalizedKey.get(normalizedKey) ?? [];
+      groupedByNormalizedKey.set(normalizedKey, [...existing, ...recommendations]);
     }
 
-    const orderedObjectives = dedupeKeepOrder([
-      ...objectives,
-      ...Object.keys(grouped),
+    const orderedObjectives = dedupeKeepOrder([...objectives, ...Object.keys(grouped)])
+      .map((objectiveKey) => normalizeObjectiveKey(objectiveKey))
+      .filter(Boolean);
+
+    const orderedKeys = dedupeKeepOrder([
+      ...orderedObjectives,
+      ...Array.from(groupedByNormalizedKey.keys()),
     ]);
 
-    return orderedObjectives.map((objectiveKey) => {
-      const recommendations =
-        groupedByNormalizedKey.get(normalizeObjectiveKey(objectiveKey)) ?? [];
+    return orderedKeys.map((objectiveKey) => {
+      const recommendations = groupedByNormalizedKey.get(objectiveKey) ?? [];
+      const seenSupplementIds = new Set<string>();
+      const seenSupplementNames = new Set<string>();
+      const supplements: Supplement[] = [];
 
-      const supplements = recommendations.map((recommendation, index) =>
-        mapRawRecommendationToSupplement(recommendation, objectiveKey, index),
-      );
+      for (let index = 0; index < recommendations.length; index += 1) {
+        const supplement = mapRawRecommendationToSupplement(
+          recommendations[index],
+          objectiveKey,
+          index,
+        );
+        const normalizedName = normalizeTextToken(supplement.name);
+
+        if (seenSupplementIds.has(supplement.id)) continue;
+        if (normalizedName && seenSupplementNames.has(normalizedName)) continue;
+
+        seenSupplementIds.add(supplement.id);
+        if (normalizedName) seenSupplementNames.add(normalizedName);
+        supplements.push(supplement);
+      }
 
       return {
         key: objectiveKey,
         label: objectiveLabel(objectiveKey),
         supplements,
       } satisfies ObjectivePlan;
-    });
+    }).filter((plan) => plan.supplements.length > 0);
   }, [decisionData, objectives]);
 
   useEffect(() => {
@@ -647,6 +756,28 @@ export function RecommendationsScreen() {
     }
     return map;
   }, [supplementHistory]);
+  const linkedSupplementIdsById = useMemo(() => {
+    const idsByName = new Map<string, string[]>();
+
+    for (const plan of objectivePlans) {
+      for (const supplement of plan.supplements) {
+        const nameKey = normalizeTextToken(supplement.name);
+        if (!nameKey) continue;
+        const existing = idsByName.get(nameKey) ?? [];
+        existing.push(supplement.id);
+        idsByName.set(nameKey, existing);
+      }
+    }
+
+    const linkedById: Record<string, string[]> = {};
+    for (const ids of idsByName.values()) {
+      const uniqueIds = Array.from(new Set(ids));
+      for (const id of uniqueIds) {
+        linkedById[id] = uniqueIds;
+      }
+    }
+    return linkedById;
+  }, [objectivePlans]);
 
   const takenCount = takenSupplements.length;
   const totalSupplements = visibleSupplementStatuses.length;
@@ -700,13 +831,15 @@ export function RecommendationsScreen() {
   const toggleTaken = (supplement: Supplement, currentState: boolean) => {
     const nextState = !currentState;
     const toggledAt = new Date().toISOString();
+    const linkedIds = linkedSupplementIdsById[supplement.id] ?? [supplement.id];
+
     setTakenById((prev) => ({
       ...prev,
-      [supplement.id]: nextState,
+      ...Object.fromEntries(linkedIds.map((id) => [id, nextState])),
     }));
     setPendingTakenAtById((prev) => ({
       ...prev,
-      [supplement.id]: toggledAt,
+      ...Object.fromEntries(linkedIds.map((id) => [id, toggledAt])),
     }));
   };
 
@@ -790,7 +923,7 @@ export function RecommendationsScreen() {
     >
       <View style={styles.header}>
         <Text style={styles.headerTitle}>Recommandations</Text>
-        <Text style={styles.headerSubtitle}>Plan personnalisé</Text>
+        <Text style={styles.headerSubtitle}>Plan personnalise</Text>
       </View>
 
       <View style={styles.mainContent}>
@@ -799,7 +932,7 @@ export function RecommendationsScreen() {
           <Text style={styles.cardSubtitle}>
             Touchez un objectif pour filtrer son plan de supplementation.
           </Text>
-          {objectives.length > 0 ? (
+          {objectivePlans.length > 0 ? (
             <View style={styles.goalsContainer}>
               <TouchableOpacity
                 onPress={() => setSelectedObjectiveKey(null)}
@@ -817,36 +950,36 @@ export function RecommendationsScreen() {
                   Tous
                 </Text>
               </TouchableOpacity>
-              {objectives.map((goal) => (
+              {objectivePlans.map((plan) => (
                 <TouchableOpacity
-                  key={goal}
+                  key={plan.key}
                   onPress={() => {
-                    const normalizedGoal = normalizeObjectiveKey(goal);
+                    const normalizedGoal = normalizeObjectiveKey(plan.key);
                     setSelectedObjectiveKey((prev) =>
                       prev === normalizedGoal ? null : normalizedGoal,
                     );
                   }}
                   style={[
                     styles.goalBadge,
-                    selectedObjectiveKey === normalizeObjectiveKey(goal) &&
+                    selectedObjectiveKey === normalizeObjectiveKey(plan.key) &&
                       styles.goalBadgeActive,
                   ]}
                 >
                   <Text
                     style={[
                       styles.goalLabel,
-                      selectedObjectiveKey === normalizeObjectiveKey(goal) &&
+                      selectedObjectiveKey === normalizeObjectiveKey(plan.key) &&
                         styles.goalLabelActive,
                     ]}
                   >
-                    {objectiveLabel(goal)}
+                    {plan.label}
                   </Text>
                 </TouchableOpacity>
               ))}
             </View>
           ) : (
             <Text style={styles.emptyText}>
-              Aucun objectif trouvé dans votre profil pour le moment.
+              Aucun objectif avec recommandations pour le moment.
             </Text>
           )}
           {selectedObjectiveLabel && (
@@ -890,7 +1023,7 @@ export function RecommendationsScreen() {
         ) : (
           <View style={styles.supplementsSection}>
             <Text style={styles.sectionTitle}>
-              Plan de supplémentation par objectif
+              Plan de supplementation par objectif
             </Text>
             <Text style={styles.sectionSubtitle}>
               Cochez les complements pris puis validez avec le bouton Enregistrer.
@@ -917,7 +1050,7 @@ export function RecommendationsScreen() {
                   {plan.supplements.length === 0 ? (
                     <View style={styles.emptyObjectiveCard}>
                       <Text style={styles.emptyObjectiveText}>
-                        Aucun complément recommandé pour cet objectif.
+                        Aucun complement recommande pour cet objectif.
                       </Text>
                     </View>
                   ) : (
@@ -1024,7 +1157,7 @@ export function RecommendationsScreen() {
                                   )}
                                   {supplement.timing === "unspecified" && (
                                     <Text style={styles.timingTextNeutral}>
-                                      Moment non précisé
+                                      Moment non precise
                                     </Text>
                                   )}
                                 </View>
@@ -1036,7 +1169,7 @@ export function RecommendationsScreen() {
                             <View style={styles.expandedContent}>
                               <View style={styles.section}>
                                 <Text style={styles.sectionLabel}>
-                                  Pourquoi ce complément ?
+                                  Pourquoi ce complement ?
                                 </Text>
                                 <Text style={styles.sectionText}>
                                   {supplement.reason}
@@ -1046,7 +1179,7 @@ export function RecommendationsScreen() {
                               {supplement.molecules.length > 0 && (
                                 <View style={styles.section}>
                                   <Text style={styles.sectionLabel}>
-                                    Molécules actives
+                                    Molecules actives
                                   </Text>
                                   <View style={styles.moleculesContainer}>
                                     {supplement.molecules.map((molecule) => (
@@ -1158,7 +1291,7 @@ export function RecommendationsScreen() {
                 </>
               ) : (
                 <Text style={styles.historyEmpty}>
-                  Aucun complément marqué comme pris.
+                  Aucun complement marque comme pris.
                 </Text>
               )}
             </View>
@@ -1186,14 +1319,14 @@ export function RecommendationsScreen() {
                 </>
               ) : (
                 <Text style={styles.historyEmpty}>
-                  Tous les compléments affichés sont pris.
+                  Tous les complements affiches sont pris.
                 </Text>
               )}
             </View>
 
             {recentHistory.length > 0 && (
               <View style={styles.historyGroup}>
-                <Text style={styles.historyGroupTitle}>Dernières actions</Text>
+                <Text style={styles.historyGroupTitle}>Dernieres actions</Text>
                 {recentHistory.map((entry) => (
                   <View key={entry.id} style={styles.historyActionRow}>
                     <View
@@ -1228,7 +1361,7 @@ export function RecommendationsScreen() {
         {!loading && !error && totalSupplements > 0 && (
           <View style={styles.summaryCard}>
             <Text style={styles.summaryText}>
-              {`${takenCount} sur ${totalSupplements} compléments pris ${
+              {`${takenCount} sur ${totalSupplements} complements pris ${
                 selectedObjectiveKey ? "dans cet objectif" : "aujourd'hui"
               }`}
             </Text>
@@ -1873,4 +2006,5 @@ const styles = StyleSheet.create({
     fontSize: 13,
   },
 });
+
 

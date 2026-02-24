@@ -44,6 +44,11 @@ export type DecideMeResponse = {
   [key: string]: any;
 };
 
+export type GoalOptionResponse = {
+  id: string;
+  label: string;
+};
+
 export type RecommendationResponse = {
   id: string;
   user_id: string;
@@ -112,6 +117,11 @@ export async function updateMyProfile(payload: any) {
 
 export async function getDecisionForMe() {
   const { data } = await api.get<DecideMeResponse>("/decide/me");
+  return data;
+}
+
+export async function getGoalOptions() {
+  const { data } = await api.get<GoalOptionResponse[]>("/meta/goals");
   return data;
 }
 

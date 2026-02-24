@@ -16,7 +16,7 @@ import {
   Weight,
   Zap,
 } from "lucide-react-native";
-import { useState } from "react";
+import { useEffect, useMemo, useState } from "react";
 import {
   ActivityIndicator,
   Alert,
@@ -29,13 +29,50 @@ import {
 } from "react-native";
 
 import { useAuth } from "@/context/auth";
-import { updateMyProfile } from "@/services/api";
+import {
+  getGoalOptions,
+  type GoalOptionResponse,
+  updateMyProfile,
+} from "@/services/api";
 
 interface OnboardingScreenProps {
   onNavigate: (screen: string) => void;
+  mode?: "full" | "goals";
 }
 
 type Option = { value: string; label: string };
+
+function normalizeGoalAlias(value: string) {
+  return value
+    .normalize("NFD")
+    .replace(/[\u0300-\u036f]/g, "")
+    .toLowerCase()
+    .replace(/[^a-z0-9]+/g, " ")
+    .trim();
+}
+
+function dedupeStrings(values: string[]) {
+  const seen = new Set<string>();
+  return values.filter((value) => {
+    if (seen.has(value)) return false;
+    seen.add(value);
+    return true;
+  });
+}
+
+function normalizeStoredGoals(values: string[], options: GoalOptionResponse[]) {
+  const byAlias = new Map<string, string>();
+  for (const option of options) {
+    byAlias.set(normalizeGoalAlias(option.id), option.id);
+    byAlias.set(normalizeGoalAlias(option.label), option.id);
+  }
+
+  const normalized = values
+    .map((value) => byAlias.get(normalizeGoalAlias(value)) ?? value.trim())
+    .filter(Boolean);
+
+  return dedupeStrings(normalized);
+}
 
 const ACTIVITY_LEVELS: Option[] = [
   { value: "sedentary", label: "Peu ou pas d'activité" },
@@ -48,7 +85,7 @@ const ACTIVITY_LEVELS: Option[] = [
   },
 ];
 
-const GOALS: Option[] = [
+const GOAL_FALLBACK_OPTIONS: Option[] = [
   { value: "mood_depression_support", label: "Améliorer mon humeur" },
   { value: "stress_anxiety_support", label: "Gérer le stress et l'anxiété" },
   { value: "sleep_support", label: "Améliorer mon sommeil" },
@@ -118,11 +155,27 @@ const ALLERGIES: Option[] = [
   { value: "other", label: "Autre allergie" },
 ];
 
-export function OnboardingScreen({ onNavigate }: OnboardingScreenProps) {
-  const { refreshMe } = useAuth();
+export function OnboardingScreen({
+  onNavigate,
+  mode = "full",
+}: OnboardingScreenProps) {
+  const { refreshMe, user } = useAuth();
+  const isGoalsOnly = mode === "goals";
+  const initialGoals = useMemo(
+    () =>
+      Array.isArray(user?.profile?.goals)
+        ? user.profile.goals.filter(
+            (goal: unknown) => typeof goal === "string" && goal.trim(),
+          )
+        : [],
+    [user?.profile?.goals],
+  );
+  const [goalOptions, setGoalOptions] = useState<Option[]>(
+    GOAL_FALLBACK_OPTIONS,
+  );
   const [saving, setSaving] = useState(false);
 
-  const [step, setStep] = useState(1);
+  const [step, setStep] = useState(isGoalsOnly ? 4 : 1);
   const [formData, setFormData] = useState({
     firstname: "",
     lastname: "",
@@ -133,14 +186,44 @@ export function OnboardingScreen({ onNavigate }: OnboardingScreenProps) {
     height: "",
     weight: "",
     activityLevel: "",
-    goals: [] as string[],
+    goals: initialGoals as string[],
     conditions: [] as string[],
     diseases: [] as string[],
     allergies: ["none"] as string[],
   });
 
+  useEffect(() => {
+    let isMounted = true;
+
+    const loadGoalOptions = async () => {
+      try {
+        const options = await getGoalOptions();
+        if (!isMounted || options.length === 0) return;
+
+        const normalized = normalizeStoredGoals(initialGoals, options);
+        const mappedOptions = options.map((option) => ({
+          value: option.id,
+          label: option.label,
+        }));
+
+        setGoalOptions(mappedOptions);
+        setFormData((prev) => ({
+          ...prev,
+          goals: normalized.length > 0 ? normalized : prev.goals,
+        }));
+      } catch {
+        // Keep fallback goals if backend metadata is unavailable.
+      }
+    };
+
+    void loadGoalOptions();
+    return () => {
+      isMounted = false;
+    };
+  }, [initialGoals]);
+
   // Dynamic total steps: 5 for men, 6 for women (adds pregnancy/breastfeeding step)
-  const totalSteps = formData.sex === "Femme" ? 6 : 5;
+  const totalSteps = isGoalsOnly ? 4 : formData.sex === "Femme" ? 6 : 5;
   const progress = (step / totalSteps) * 100;
 
   const sexToApi = (sex: string) => {
@@ -217,7 +300,42 @@ export function OnboardingScreen({ onNavigate }: OnboardingScreenProps) {
     }
   };
 
+  const handleSubmitGoalsOnly = async () => {
+    const mergedGoals = normalizeStoredGoals(
+      dedupeStrings([...initialGoals, ...formData.goals]),
+      goalOptions.map((option) => ({ id: option.value, label: option.label })),
+    );
+
+    if (mergedGoals.length === 0) {
+      Alert.alert(
+        "Objectif requis",
+        "Choisissez au moins un objectif avant d'enregistrer.",
+      );
+      return;
+    }
+
+    try {
+      setSaving(true);
+      await updateMyProfile({ goals: mergedGoals });
+      await refreshMe();
+      onNavigate("dashboard");
+    } catch (e: any) {
+      Alert.alert(
+        "Erreur",
+        e?.response?.data?.detail ??
+          "Impossible d'enregistrer les objectifs.",
+      );
+    } finally {
+      setSaving(false);
+    }
+  };
+
   const handleNext = () => {
+    if (isGoalsOnly) {
+      void handleSubmitGoalsOnly();
+      return;
+    }
+
     // Skip step 2 (pregnancy/breastfeeding) if user is male
     if (step === 1 && formData.sex === "Homme") {
       setStep(3); // Jump to activity level
@@ -230,6 +348,11 @@ export function OnboardingScreen({ onNavigate }: OnboardingScreenProps) {
   };
 
   const handleBack = () => {
+    if (isGoalsOnly) {
+      onNavigate("dashboard");
+      return;
+    }
+
     // Handle back navigation considering the conditional step 2
     if (step === 3 && formData.sex === "Homme") {
       setStep(1); // Jump back to sex selection
@@ -271,6 +394,7 @@ export function OnboardingScreen({ onNavigate }: OnboardingScreenProps) {
 
   // Helper to get actual step number for display
   const getDisplayStep = () => {
+    if (isGoalsOnly) return 1;
     if (formData.sex === "Homme" && step >= 3) {
       return step - 1; // Adjust display for skipped step
     }
@@ -288,13 +412,15 @@ export function OnboardingScreen({ onNavigate }: OnboardingScreenProps) {
       <View style={styles.header}>
         <TouchableOpacity
           onPress={handleBack}
-          style={[styles.backButton, step === 1 && styles.invisible]}
+          style={[styles.backButton, !isGoalsOnly && step === 1 && styles.invisible]}
           disabled={saving}
         >
           <ArrowLeft size={24} color="#14272d" />
         </TouchableOpacity>
         <Text style={styles.stepText}>
-          Étape {getDisplayStep()} / {totalSteps}
+          {isGoalsOnly
+            ? "Mise a jour des objectifs"
+            : `Etape ${getDisplayStep()} / ${totalSteps}`}
         </Text>
         <View style={styles.spacer} />
       </View>
@@ -617,7 +743,7 @@ export function OnboardingScreen({ onNavigate }: OnboardingScreenProps) {
             </View>
 
             <View style={styles.optionsContainer}>
-              {GOALS.map((goal) => {
+              {goalOptions.map((goal) => {
                 const Icon =
                   goal.value === "sleep_support"
                     ? Moon
@@ -862,11 +988,13 @@ export function OnboardingScreen({ onNavigate }: OnboardingScreenProps) {
           ) : (
             <>
               <Text style={styles.nextButtonText}>
-                {step === totalSteps
+                {isGoalsOnly
+                  ? "Enregistrer mes objectifs"
+                  : step === totalSteps
                   ? "Valider & accéder à mon espace"
                   : "Continuer"}
               </Text>
-              <ArrowRight size={20} color="white" />
+              {!isGoalsOnly && <ArrowRight size={20} color="white" />}
             </>
           )}
         </TouchableOpacity>
