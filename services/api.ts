@@ -200,16 +200,37 @@ export async function clearToken() {
 // ============================================
 
 export type ProgressResponse = {
+  selected_date?: string;
   today_progress: number;
+  supplements_taken?: number;
+  supplements_total?: number;
   weekly_data: { day: string; completed: boolean }[];
   adherence_data: boolean[];
   evolution_data: { day: number; value: number }[];
   monthly_data: { day: number; intensity: number }[];
   daily_intakes: { time: string; name: string; taken: boolean }[];
+  recommendation_id?: string | null;
+  expected_supplements?: {
+    id: string;
+    name: string;
+    taken: boolean;
+    timing?: string | null;
+    dosage?: string | null;
+    items: {
+      supplement_id: string;
+      supplement_name: string;
+      objective_key?: string | null;
+      objective_label?: string | null;
+      timing?: string | null;
+      dosage?: string | null;
+    }[];
+  }[];
 };
 
-export async function getProgress() {
-  const { data } = await api.get<ProgressResponse>("/tracking/progress");
+export async function getProgress(params?: { date?: string }) {
+  const { data } = await api.get<ProgressResponse>("/tracking/progress", {
+    params,
+  });
   return data;
 }
 
@@ -228,5 +249,44 @@ export type DashboardResponse = {
 
 export async function getDashboard() {
   const { data } = await api.get<DashboardResponse>("/dashboard");
+  return data;
+}
+
+// ============================================
+// ENCYCLOPEDIE
+// ============================================
+
+export type EncyclopedieSupplementSummaryResponse = {
+  id: string;
+  name: string;
+  category: string;
+  description: string;
+  molecules: string[];
+};
+
+export type EncyclopedieSupplementDetailResponse =
+  EncyclopedieSupplementSummaryResponse & {
+    benefits: string[];
+    dosage?: string | null;
+    sources: string[];
+  };
+
+export async function listEncyclopedieSupplements(params?: {
+  q?: string;
+  category?: string;
+  limit?: number;
+  offset?: number;
+}) {
+  const { data } = await api.get<EncyclopedieSupplementSummaryResponse[]>(
+    "/encyclopedie/supplements",
+    { params },
+  );
+  return data;
+}
+
+export async function getEncyclopedieSupplement(supplementId: string) {
+  const { data } = await api.get<EncyclopedieSupplementDetailResponse>(
+    `/encyclopedie/supplements/${supplementId}`,
+  );
   return data;
 }

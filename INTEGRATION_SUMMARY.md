@@ -398,7 +398,7 @@ README.md                              # Complete project documentation
 ### Files NOT Modified (Kept As-Is):
 ```
 components/screens/recommendations-screen.tsx  # Your implementation kept 100%
-components/screens/encyclopedie-screen.tsx    # Static content (no backend needed)
+components/screens/encyclopedie-screen.tsx    # Connected to backend (GET /encyclopedie/supplements)
 components/screens/onboarding-screen.tsx      # Already working
 components/screens/login-screen.tsx           # Already working
 components/screens/signup-screen.tsx          # Already working

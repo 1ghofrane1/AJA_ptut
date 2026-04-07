@@ -8,8 +8,14 @@ import {
     Search,
     Shield
 } from "lucide-react-native";
-import { useState } from "react";
+import { getEncyclopedieSupplement, listEncyclopedieSupplements } from "@/services/api";
+import type {
+  EncyclopedieSupplementDetailResponse,
+  EncyclopedieSupplementSummaryResponse,
+} from "@/services/api";
+import { useEffect, useMemo, useState } from "react";
 import {
+    ActivityIndicator,
     ScrollView,
     StyleSheet,
     Text,
@@ -18,16 +24,8 @@ import {
     View
 } from "react-native";
 
-interface Supplement {
-  id: string;
-  name: string;
-  category: string;
-  description: string;
-  molecules: string[];
-  benefits?: string[];
-  dosage?: string;
-  sources?: string[];
-}
+type SupplementSummary = EncyclopedieSupplementSummaryResponse;
+type SupplementDetail = EncyclopedieSupplementDetailResponse;
 
 interface AccordionItemProps {
   icon: React.ComponentType<any>;
@@ -65,7 +63,16 @@ function AccordionItem({ icon: Icon, title, children }: AccordionItemProps) {
 
 export function EncyclopedieScreen() {
   const [searchQuery, setSearchQuery] = useState("");
-  const [selectedSupplement, setSelectedSupplement] = useState<Supplement | null>(null);
+  const [selectedCategory, setSelectedCategory] = useState<string | null>(null);
+
+  const [supplements, setSupplements] = useState<SupplementSummary[]>([]);
+  const [listLoading, setListLoading] = useState(true);
+  const [listError, setListError] = useState<string | null>(null);
+  const [refreshKey, setRefreshKey] = useState(0);
+
+  const [selectedSupplement, setSelectedSupplement] =
+    useState<SupplementDetail | null>(null);
+  const [selectedLoading, setSelectedLoading] = useState(false);
 
   const categories = [
     { icon: Brain, label: "Cognition", color: "#7ea69d" },
@@ -75,73 +82,58 @@ export function EncyclopedieScreen() {
     { icon: Bone, label: "Os & Articulations", color: "#7ea69d" },
     { icon: Pill, label: "Tous", color: "#14272d" },
   ];
+  const categoryParam = useMemo(() => {
+    if (!selectedCategory) return undefined;
+    const normalized = selectedCategory.trim().toLowerCase();
+    if (!normalized || normalized === "tous") return undefined;
+    return selectedCategory;
+  }, [selectedCategory]);
 
-  const supplements: Supplement[] = [
-    {
-      id: "1",
-      name: "Magnésium Bisglycinate",
-      category: "Relaxation",
-      description: "Forme hautement biodisponible de magnésium",
-      molecules: ["Magnésium", "Glycine"],
-      benefits: [
-        "Améliore la qualité du sommeil",
-        "Réduit le stress et l'anxiété",
-        "Favorise la relaxation musculaire",
-      ],
-      dosage: "300-400mg par jour, le soir",
-      sources: ["Études cliniques", "EFSA", "ANSES"],
-    },
-    {
-      id: "2",
-      name: "Vitamine D3",
-      category: "Immunité",
-      description: "Vitamine liposoluble essentielle",
-      molecules: ["Cholécalciférol"],
-      benefits: [
-        "Renforce le système immunitaire",
-        "Améliore l'absorption du calcium",
-        "Soutient la santé osseuse",
-      ],
-      dosage: "1000-2000 UI par jour",
-      sources: ["OMS", "ANSES", "Recherche médicale"],
-    },
-    {
-      id: "3",
-      name: "Oméga-3 EPA/DHA",
-      category: "Cardiovasculaire",
-      description: "Acides gras essentiels",
-      molecules: ["EPA", "DHA"],
-      benefits: [
-        "Soutient la santé cardiovasculaire",
-        "Améliore les fonctions cognitives",
-        "Propriétés anti-inflammatoires",
-      ],
-      dosage: "1000-2000mg par jour",
-      sources: ["American Heart Association", "EFSA"],
-    },
-    {
-      id: "4",
-      name: "Vitamine C",
-      category: "Immunité",
-      description: "Antioxydant puissant hydrosoluble",
-      molecules: ["Acide ascorbique"],
-      benefits: [
-        "Renforce le système immunitaire",
-        "Protection antioxydante",
-        "Synthèse du collagène",
-      ],
-      dosage: "500-1000mg par jour",
-      sources: ["ANSES", "NIH", "EFSA"],
-    },
-  ];
+  useEffect(() => {
+    let cancelled = false;
+    setListLoading(true);
+    setListError(null);
 
-  const filteredSupplements = supplements.filter(
-    (supp) =>
-      supp.name.toLowerCase().includes(searchQuery.toLowerCase()) ||
-      supp.category.toLowerCase().includes(searchQuery.toLowerCase())
-  );
+    const handle = setTimeout(async () => {
+      try {
+        const data = await listEncyclopedieSupplements({
+          q: searchQuery.trim() ? searchQuery.trim() : undefined,
+          category: categoryParam,
+          limit: 80,
+        });
+        if (cancelled) return;
+        setSupplements(data);
+      } catch {
+        if (cancelled) return;
+        setListError(
+          "Impossible de charger l'encyclopedie. Verifiez la connexion backend.",
+        );
+        setSupplements([]);
+      } finally {
+        if (!cancelled) setListLoading(false);
+      }
+    }, 250);
 
-  if (selectedSupplement) {
+    return () => {
+      cancelled = true;
+      clearTimeout(handle);
+    };
+  }, [searchQuery, categoryParam, refreshKey]);
+
+  async function openSupplement(supplement: SupplementSummary) {
+    setSelectedLoading(true);
+    setListError(null);
+    try {
+      const detail = await getEncyclopedieSupplement(supplement.id);
+      setSelectedSupplement(detail);
+    } catch {
+      setListError("Impossible de charger les details du complement.");
+    } finally {
+      setSelectedLoading(false);
+    }
+  }
+
+  const filteredSupplements = supplements;if (selectedSupplement) {
     return (
       <ScrollView style={styles.container} contentContainerStyle={styles.contentContainer}>
         {/* Header */}
@@ -178,7 +170,7 @@ export function EncyclopedieScreen() {
           {/* Accordion sections */}
           <View style={styles.accordionCard}>
             {/* Benefits */}
-            {selectedSupplement.benefits && (
+            {selectedSupplement.benefits && selectedSupplement.benefits.length > 0 && (
               <AccordionItem icon={Shield} title="Bienfaits">
                 <View style={styles.benefitsList}>
                   {selectedSupplement.benefits.map((benefit, index) => (
@@ -199,7 +191,7 @@ export function EncyclopedieScreen() {
             )}
 
             {/* Sources */}
-            {selectedSupplement.sources && (
+            {selectedSupplement.sources && selectedSupplement.sources.length > 0 && (
               <AccordionItem icon={Brain} title="Sources scientifiques">
                 <View style={styles.sourcesList}>
                   {selectedSupplement.sources.map((source, index) => (
@@ -244,10 +236,13 @@ export function EncyclopedieScreen() {
         <View style={styles.categoriesGrid}>
           {categories.map((category, index) => {
             const Icon = category.icon;
+            const isActive =
+              (selectedCategory || "Tous").toLowerCase() === category.label.toLowerCase();
             return (
               <TouchableOpacity
                 key={index}
                 style={styles.categoryCard}
+                onPress={() => setSelectedCategory(category.label)}
               >
                 <View 
                   style={[
@@ -257,7 +252,14 @@ export function EncyclopedieScreen() {
                 >
                   <Icon size={24} color={category.color} />
                 </View>
-                <Text style={styles.categoryLabel}>{category.label}</Text>
+                <Text
+                  style={[
+                    styles.categoryLabel,
+                    isActive ? { fontWeight: "700" } : null,
+                  ]}
+                >
+                  {category.label}
+                </Text>
               </TouchableOpacity>
             );
           })}
@@ -268,11 +270,41 @@ export function EncyclopedieScreen() {
           <Text style={styles.sectionHeaderText}>
             {searchQuery ? "Résultats" : "Compléments populaires"}
           </Text>
+
+          {listLoading && (
+            <View style={styles.card}>
+              <View style={{ flexDirection: "row", alignItems: "center", gap: 10 }}>
+                <ActivityIndicator color="#7ea69d" />
+                <Text style={styles.descriptionText}>Chargement...</Text>
+              </View>
+            </View>
+          )}
+
+          {!listLoading && listError && (
+            <View style={styles.card}>
+              <Text style={styles.descriptionText}>{listError}</Text>
+              <TouchableOpacity
+                onPress={() => setRefreshKey((v) => v + 1)}
+                style={[styles.backButton, { marginTop: 12 }]}
+              >
+                <Text style={[styles.backText, { color: "#7ea69d" }]}>
+                  Réessayer
+                </Text>
+              </TouchableOpacity>
+            </View>
+          )}
+
+          {!listLoading && !listError && filteredSupplements.length === 0 && (
+            <View style={styles.card}>
+              <Text style={styles.descriptionText}>Aucun résultat.</Text>
+            </View>
+          )}
           {filteredSupplements.map((supplement) => (
             <TouchableOpacity
               key={supplement.id}
-              onPress={() => setSelectedSupplement(supplement)}
+              onPress={() => openSupplement(supplement)}
               style={styles.supplementCard}
+              disabled={selectedLoading}
             >
               <View style={styles.supplementIcon}>
                 <Pill size={24} color="#7ea69d" />
@@ -573,3 +605,4 @@ const styles = StyleSheet.create({
     fontSize: 12,
   },
 });
+

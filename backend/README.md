@@ -311,7 +311,7 @@ The token is returned on signup/login and should be stored by the frontend.
 2. ✅ **Dashboard** → `GET /dashboard`
 3. ✅ **Recommendations** → `GET /decide/me` + `POST /supplements/intake`
 4. ✅ **Suivi (Tracking)** → `GET /tracking/progress`
-5. ℹ️ **Encyclopédie** - Static educational content (no backend)
+5. ✅ **Encyclopédie** → `GET /encyclopedie/supplements` (served by the Experta/FastAPI backend; not implemented in this mock server)
 
 ### Frontend API Functions (services/api.ts):
 ```typescript

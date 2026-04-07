@@ -125,7 +125,7 @@ environment:
    - Handles empty data gracefully
 
 5. **Encyclopédie Screen** (`components/screens/encyclopedie-screen.tsx`)
-   - Static educational content about supplements
+   - API-driven educational content about supplements (via `GET /encyclopedie/supplements`)
    - Searchable database
    - Detailed information cards with accordion sections
    - Organized by health categories
@@ -139,7 +139,7 @@ environment:
 │   │   ├── dashboard-screen.tsx        ✅ Connected to backend
 │   │   ├── recommendations-screen.tsx  ✅ Connected to backend
 │   │   ├── suivi-screen.tsx           ✅ Connected to backend
-│   │   ├── encyclopedie-screen.tsx    📚 Static content
+│   │   ├── encyclopedie-screen.tsx    ✅ Connected to backend
 │   │   ├── onboarding-screen.tsx      ✅ Connected to backend
 │   │   ├── login-screen.tsx           ✅ Connected to backend
 │   │   └── signup-screen.tsx          ✅ Connected to backend
