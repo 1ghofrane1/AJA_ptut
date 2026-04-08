@@ -100,7 +100,7 @@ function RootApp() {
 
   if (loading) {
     return (
-      <View style={styles.loadingContainer}>
+      <View className="flex-1 items-center justify-center bg-aja-cream" style={styles.loadingContainer}>
         <ActivityIndicator size="large" color="#7ea69d" />
       </View>
     );
@@ -115,7 +115,7 @@ function RootApp() {
     currentScreen === "goals"
   ) {
     return (
-      <View style={styles.container}>
+      <View className="flex-1 bg-aja-cream" style={styles.container}>
         {currentScreen === "welcome" && (
           <WelcomeScreen onNavigate={handleNavigate} />
         )}
@@ -137,8 +137,8 @@ function RootApp() {
 
   // Main app screens (with bottom navigation)
   return (
-    <View style={styles.containerWithNav}>
-      <View style={styles.content}>
+    <View className="flex-1 bg-aja-cream" style={styles.containerWithNav}>
+      <View className="flex-1" style={styles.content}>
         {activeTab === "accueil" && (
           <DashboardScreen onAddGoal={() => setCurrentScreen("goals")} />
         )}
@@ -148,6 +148,7 @@ function RootApp() {
       </View>
 
       <TouchableOpacity
+        className="absolute right-5 top-14 z-[80] h-9 flex-row items-center justify-center rounded-full border border-black/10 bg-white/95 px-3"
         style={styles.logoutButton}
         onPress={handleLogout}
         disabled={isLoggingOut}

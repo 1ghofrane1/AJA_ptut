@@ -413,9 +413,9 @@ export function SuiviScreen() {
         : "30 derniers jours";
 
   return (
-    <View style={styles.container}>
-      <ScrollView style={styles.container} contentContainerStyle={styles.contentContainer}>
-        <View style={styles.header}>
+    <View className="flex-1 bg-aja-cream" style={styles.container}>
+      <ScrollView className="flex-1 bg-aja-cream" style={styles.container} contentContainerStyle={styles.contentContainer}>
+        <View className="rounded-b-3xl bg-aja-ink px-6 pt-6 pb-5" style={styles.header}>
           <View style={styles.headerTopRow}>
             <View style={{ flex: 1 }}>
               <Text style={styles.headerTitle}>Suivi</Text>

@@ -37,6 +37,13 @@ export type TokenResponse = {
   user: UserResponse;
 };
 
+export type EmailAvailabilityResponse = {
+  available: boolean;
+  normalized_email: string;
+  reason?: string | null;
+  suggestion?: string | null;
+};
+
 export type DecideMeResponse = {
   derived_input?: Record<string, any>;
   input?: Record<string, any>;
@@ -91,6 +98,13 @@ export async function signup(email: string, password: string) {
   const { data } = await api.post<TokenResponse>("/auth/signup", {
     email,
     password,
+  });
+  return data;
+}
+
+export async function checkSignupEmailAvailability(email: string) {
+  const { data } = await api.get<EmailAvailabilityResponse>("/auth/check-email", {
+    params: { email },
   });
   return data;
 }

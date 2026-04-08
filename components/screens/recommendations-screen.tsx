@@ -918,15 +918,16 @@ export function RecommendationsScreen() {
 
   return (
     <ScrollView
+      className="flex-1 bg-aja-cream"
       style={styles.container}
       contentContainerStyle={styles.contentContainer}
     >
-      <View style={styles.header}>
+      <View className="rounded-b-3xl bg-aja-ink px-6 py-6" style={styles.header}>
         <Text style={styles.headerTitle}>Recommandations</Text>
         <Text style={styles.headerSubtitle}>Plan personnalise</Text>
       </View>
 
-      <View style={styles.mainContent}>
+      <View className="-mt-4 gap-4 px-6" style={styles.mainContent}>
         <View style={styles.card}>
           <Text style={styles.cardTitle}>Vos objectifs</Text>
           <Text style={styles.cardSubtitle}>

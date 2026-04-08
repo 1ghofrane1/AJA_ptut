@@ -23,8 +23,8 @@ export function BottomNavigation({
   ];
 
   return (
-    <View style={styles.nav}>
-      <View style={styles.container}>
+    <View className="absolute bottom-0 left-0 right-0 z-50 border-t border-black/10 bg-white" style={styles.nav}>
+      <View className="flex-row items-center justify-around px-2 py-3" style={styles.container}>
         {tabs.map((tab) => {
           const Icon = tab.icon;
           const isActive = activeTab === tab.id;
@@ -32,6 +32,7 @@ export function BottomNavigation({
             <TouchableOpacity
               key={tab.id}
               onPress={() => onTabChange(tab.id)}
+              className="items-center px-4 py-2"
               style={styles.button}
             >
               <Icon 

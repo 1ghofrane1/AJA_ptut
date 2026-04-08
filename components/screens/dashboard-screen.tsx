@@ -1,8 +1,19 @@
-import { Plus, Shield, Sun, Target, TrendingUp } from "lucide-react-native";
-import { useEffect, useState } from "react";
-import { ActivityIndicator, ScrollView, StyleSheet, Text, TouchableOpacity, View } from "react-native";
-import Svg, { Circle } from "react-native-svg";
-import { getDashboard, type DashboardResponse } from "@/services/api";
+import { Check, ClipboardList, Flame, Target } from "lucide-react-native";
+import { useEffect, useMemo, useState } from "react";
+import {
+  ActivityIndicator,
+  ScrollView,
+  StyleSheet,
+  Text,
+  TouchableOpacity,
+  View,
+} from "react-native";
+import {
+  getDashboard,
+  getProgress,
+  type DashboardResponse,
+  type ProgressResponse,
+} from "@/services/api";
 
 interface DashboardScreenProps {
   userName?: string;
@@ -11,198 +22,181 @@ interface DashboardScreenProps {
 
 export function DashboardScreen({ userName, onAddGoal }: DashboardScreenProps) {
   const [loading, setLoading] = useState(true);
+  const [error, setError] = useState<string | null>(null);
   const [dashboardData, setDashboardData] = useState<DashboardResponse | null>(null);
+  const [progressData, setProgressData] = useState<ProgressResponse | null>(null);
 
   useEffect(() => {
-    loadDashboard();
+    let mounted = true;
+
+    async function load() {
+      setLoading(true);
+      setError(null);
+      try {
+        const [dashboard, progress] = await Promise.all([
+          getDashboard(),
+          getProgress(),
+        ]);
+        if (!mounted) return;
+        setDashboardData(dashboard);
+        setProgressData(progress);
+      } catch (e) {
+        console.error("Failed to load accueil:", e);
+        if (!mounted) return;
+        setError("Impossible de charger l accueil pour le moment.");
+      } finally {
+        if (mounted) setLoading(false);
+      }
+    }
+
+    load();
+    return () => {
+      mounted = false;
+    };
   }, []);
 
-  const loadDashboard = async () => {
-    try {
-      setLoading(true);
-      const data = await getDashboard();
-      setDashboardData(data);
-    } catch (error) {
-      console.error('Failed to load dashboard:', error);
-      // Keep showing UI with fallback data
-    } finally {
-      setLoading(false);
-    }
-  };
-
-  // Use data from backend, or fallback to defaults
   const displayName = dashboardData?.user_name || userName || "User";
-  const todayProgress = dashboardData?.today_progress || 0;
-  const supplementsTaken = dashboardData?.supplements_taken || 0;
-  const supplementsTotal = dashboardData?.supplements_total || 3;
-  const weeklyData = dashboardData?.weekly_data || [];
-  const adherenceData = dashboardData?.adherence_data || [];
+  const progress = dashboardData?.today_progress ?? 0;
+  const taken = dashboardData?.supplements_taken ?? 0;
+  const total = dashboardData?.supplements_total ?? 0;
+  const weeklyData = dashboardData?.weekly_data ?? [];
+  const adherenceData = dashboardData?.adherence_data ?? [];
+  const expectedSupplements = progressData?.expected_supplements ?? [];
+  const takenTodayEvents = useMemo(
+    () => (progressData?.daily_intakes ?? []).filter((item) => item.taken).slice(-4).reverse(),
+    [progressData?.daily_intakes],
+  );
 
   if (loading) {
     return (
-      <View style={[styles.container, { justifyContent: 'center', alignItems: 'center' }]}>
+      <View className="flex-1 items-center justify-center bg-aja-cream" style={[styles.container, styles.centered]}>
         <ActivityIndicator size="large" color="#7ea69d" />
       </View>
     );
   }
 
-  const radius = 28;
-  const circumference = 2 * Math.PI * radius;
-  const strokeDashoffset = circumference * (1 - todayProgress / 100);
-
-  return (
-    <ScrollView style={styles.container} contentContainerStyle={styles.contentContainer}>
-      {/* Header */}
-      <View style={styles.header}>
-        <View style={styles.headerContent}>
-          <View>
-            <Text style={styles.greeting}>Bonjour,</Text>
-            <Text style={styles.userName}>{displayName}</Text>
-          </View>
-          <View style={styles.avatar}>
-            <Text style={styles.avatarText}>{displayName.charAt(0).toUpperCase()}</Text>
-          </View>
+  if (error) {
+    return (
+      <View className="flex-1 items-center justify-center bg-aja-cream" style={[styles.container, styles.centered]}>
+        <View style={styles.errorCard}>
+          <Text style={styles.errorText}>{error}</Text>
         </View>
       </View>
+    );
+  }
 
-      {/* Main content */}
+  return (
+    <ScrollView className="flex-1 bg-aja-cream" style={styles.container} contentContainerStyle={styles.contentContainer}>
+      <View style={styles.header}>
+        <Text style={styles.greeting}>Bonjour,</Text>
+        <Text style={styles.userName}>{displayName}</Text>
+        <Text style={styles.headerSubtitle}>Votre resume du jour</Text>
+      </View>
+
       <View style={styles.mainContent}>
-        {/* Daily Health Snapshot Card */}
+        <View style={styles.overviewCard}>
+          <View style={styles.overviewItem}>
+            <Target size={16} color="#b3d3d2" />
+            <Text style={styles.overviewValue}>{progress}%</Text>
+            <Text style={styles.overviewLabel}>Progression</Text>
+          </View>
+          <View style={styles.overviewDivider} />
+          <View style={styles.overviewItem}>
+            <Check size={16} color="#b3d3d2" />
+            <Text style={styles.overviewValue}>{taken}</Text>
+            <Text style={styles.overviewLabel}>Pris</Text>
+          </View>
+          <View style={styles.overviewDivider} />
+          <View style={styles.overviewItem}>
+            <ClipboardList size={16} color="#b3d3d2" />
+            <Text style={styles.overviewValue}>{total}</Text>
+            <Text style={styles.overviewLabel}>Prevus</Text>
+          </View>
+        </View>
+
         <View style={styles.card}>
-          <View style={styles.cardRow}>
-            {/* Visual indicator bar */}
-            <View style={styles.indicatorBar} />
-            
-            {/* Content */}
-            <View style={styles.cardContent}>
-              <Text style={styles.cardTitle}>Aperçu du jour</Text>
-              
-              {/* Today's plan */}
-              <View style={styles.infoRow}>
-                <View style={styles.iconCircle}>
-                  <Sun size={20} color="#7ea69d" />
-                </View>
-                <View>
-                  <Text style={styles.infoText}>{supplementsTotal} compléments</Text>
-                  <Text style={styles.infoSubtext}>À prendre aujourd'hui</Text>
-                </View>
-              </View>
+          <Text style={styles.cardTitle}>Plan du jour</Text>
+          <Text style={styles.cardSubtitle}>
+            {taken}/{total} complement{total > 1 ? "s" : ""} valide{total > 1 ? "s" : ""}
+          </Text>
 
-              {/* Safety status */}
-              <View style={styles.infoRow}>
-                <View style={styles.iconCircle}>
-                  <Shield size={20} color="#7ea69d" />
+          {expectedSupplements.length === 0 ? (
+            <Text style={styles.emptyText}>Aucun complement planifie pour aujourd hui.</Text>
+          ) : (
+            <View style={styles.list}>
+              {expectedSupplements.slice(0, 5).map((supplement) => (
+                <View
+                  key={supplement.id}
+                  style={[styles.planItem, supplement.taken && styles.planItemDone]}
+                >
+                  <View style={[styles.planDot, supplement.taken && styles.planDotDone]} />
+                  <View style={{ flex: 1 }}>
+                    <Text style={styles.planName}>{supplement.name}</Text>
+                    {!!supplement.dosage && (
+                      <Text style={styles.planMeta}>{supplement.dosage}</Text>
+                    )}
+                  </View>
+                  <Text style={styles.planStatus}>
+                    {supplement.taken ? "Pris" : "En attente"}
+                  </Text>
                 </View>
-                <View>
-                  <Text style={styles.infoText}>Plan sécuritaire</Text>
-                  <Text style={styles.infoSubtext}>Aucune interaction détectée</Text>
-                </View>
-              </View>
-
-              {/* Expected benefit */}
-              <View style={styles.infoRow}>
-                <View style={styles.iconCircle}>
-                  <Target size={20} color="#7ea69d" />
-                </View>
-                <View>
-                  <Text style={styles.infoText}>Amélioration du sommeil</Text>
-                  <Text style={styles.infoSubtext}>Objectif principal</Text>
-                </View>
-              </View>
+              ))}
             </View>
-          </View>
+          )}
         </View>
 
-        {/* Today's Progress */}
-        <View style={styles.progressCard}>
-          <View style={styles.progressHeader}>
-            <View>
-              <Text style={styles.progressTitle}>Progression du jour</Text>
-              <Text style={styles.progressSubtext}>{supplementsTaken} sur {supplementsTotal} compléments pris</Text>
-            </View>
-            <View style={styles.circularProgress}>
-              {/* Circular progress */}
-              <Svg width={64} height={64} style={{ transform: [{ rotate: '-90deg' }] }}>
-                <Circle
-                  cx="32"
-                  cy="32"
-                  r={radius}
-                  stroke="#b3d3d2"
-                  strokeWidth="6"
-                  fill="none"
-                />
-                <Circle
-                  cx="32"
-                  cy="32"
-                  r={radius}
-                  stroke="#7ea69d"
-                  strokeWidth="6"
-                  fill="none"
-                  strokeDasharray={circumference}
-                  strokeDashoffset={strokeDashoffset}
-                  strokeLinecap="round"
-                />
-              </Svg>
-              <View style={styles.progressPercentage}>
-                <Text style={styles.progressText}>{todayProgress}%</Text>
-              </View>
-            </View>
-          </View>
-        </View>
-
-        {/* Weekly Mini Calendar */}
         <View style={styles.card}>
           <Text style={styles.cardTitle}>Cette semaine</Text>
-          <View style={styles.weeklyContainer}>
+          <Text style={styles.cardSubtitle}>Regularite sur les 7 derniers jours</Text>
+
+          <View style={styles.weekRow}>
             {weeklyData.map((day, index) => (
-              <View key={index} style={styles.dayColumn}>
-                <Text style={styles.dayLabel}>{day.day}</Text>
+              <View key={`${day.day}-${index}`} style={styles.weekItem}>
                 <View
-                  style={[
-                    styles.dayDot,
-                    day.completed
-                      ? styles.dayDotCompleted
-                      : index < 4
-                      ? styles.dayDotPartial
-                      : styles.dayDotIncomplete
-                  ]}
+                  style={[styles.weekDot, day.completed ? styles.weekDotDone : styles.weekDotPending]}
                 />
+                <Text style={styles.weekLabel}>{day.day}</Text>
               </View>
             ))}
           </View>
-        </View>
 
-        {/* Adherence Insight */}
-        <View style={styles.adherenceCard}>
-          <View style={styles.adherenceHeader}>
-            <TrendingUp size={20} color="#14272d" />
-            <Text style={styles.adherenceTitle}>Régularité</Text>
-          </View>
           <View style={styles.adherenceBar}>
-            {adherenceData.map((completed, index) => (
+            {adherenceData.map((isDone, index) => (
               <View
-                key={index}
+                key={`adherence-${index}`}
                 style={[
                   styles.adherenceSegment,
-                  completed ? styles.adherenceCompleted : styles.adherenceIncomplete
+                  isDone ? styles.adherenceSegmentDone : styles.adherenceSegmentPending,
                 ]}
               />
             ))}
           </View>
-          <Text style={styles.adherenceText}>Régularité en amélioration</Text>
         </View>
 
-        {/* System Insight */}
-        <View style={styles.insightCard}>
-          <Text style={styles.insightText}>
-            💡 Votre profil montre une amélioration de 15% en qualité de sommeil ce mois-ci
-          </Text>
+        <View style={styles.card}>
+          <View style={styles.cardHeaderRow}>
+            <Text style={styles.cardTitle}>Dernieres prises</Text>
+            <Flame size={16} color="#7ea69d" />
+          </View>
+
+          {takenTodayEvents.length === 0 ? (
+            <Text style={styles.emptyText}>Aucune prise enregistree aujourd hui.</Text>
+          ) : (
+            <View style={styles.list}>
+              {takenTodayEvents.map((item, index) => (
+                <View key={`${item.time}-${item.name}-${index}`} style={styles.timelineRow}>
+                  <Text style={styles.timelineTime}>{item.time}</Text>
+                  <Text numberOfLines={1} style={styles.timelineLabel}>
+                    {item.name}
+                  </Text>
+                </View>
+              ))}
+            </View>
+          )}
         </View>
 
-        {/* Add Goal Smart Entry */}
-        <TouchableOpacity style={styles.addButton} onPress={onAddGoal}>
-          <Plus size={20} color="#7ea69d" />
-          <Text style={styles.addButtonText}>Ajouter un objectif santé</Text>
+        <TouchableOpacity style={styles.addButton} onPress={onAddGoal} activeOpacity={0.9}>
+          <Text style={styles.addButtonText}>Mettre a jour mes objectifs</Text>
         </TouchableOpacity>
       </View>
     </ScrollView>
@@ -212,231 +206,227 @@ export function DashboardScreen({ userName, onAddGoal }: DashboardScreenProps) {
 const styles = StyleSheet.create({
   container: {
     flex: 1,
-    backgroundColor: '#fef6e2',
+    backgroundColor: "#fef6e2",
   },
   contentContainer: {
     paddingBottom: 96,
   },
+  centered: {
+    justifyContent: "center",
+    alignItems: "center",
+  },
   header: {
-    backgroundColor: '#14272d',
+    backgroundColor: "#14272d",
     paddingHorizontal: 24,
     paddingVertical: 24,
     borderBottomLeftRadius: 24,
     borderBottomRightRadius: 24,
   },
-  headerContent: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    justifyContent: 'space-between',
-  },
   greeting: {
-    color: '#b3d3d2',
+    color: "#b3d3d2",
     fontSize: 14,
   },
   userName: {
-    color: 'white',
+    color: "white",
     fontSize: 24,
+    fontWeight: "700",
+    marginTop: 2,
   },
-  avatar: {
-    width: 48,
-    height: 48,
-    borderRadius: 24,
-    backgroundColor: '#dfc485',
-    alignItems: 'center',
-    justifyContent: 'center',
-  },
-  avatarText: {
-    color: '#14272d',
-    fontSize: 16,
+  headerSubtitle: {
+    color: "#b3d3d2",
+    fontSize: 13,
+    marginTop: 6,
   },
   mainContent: {
     paddingHorizontal: 24,
-    marginTop: -24,
+    marginTop: -16,
     gap: 16,
   },
-  card: {
-    backgroundColor: 'white',
+  overviewCard: {
+    backgroundColor: "#14272d",
     borderRadius: 16,
-    padding: 20,
-    shadowColor: '#000',
+    paddingVertical: 14,
+    paddingHorizontal: 10,
+    flexDirection: "row",
+    alignItems: "center",
+  },
+  overviewItem: {
+    flex: 1,
+    alignItems: "center",
+    gap: 3,
+  },
+  overviewValue: {
+    color: "white",
+    fontSize: 20,
+    fontWeight: "700",
+  },
+  overviewLabel: {
+    color: "#b3d3d2",
+    fontSize: 12,
+  },
+  overviewDivider: {
+    width: 1,
+    height: 28,
+    backgroundColor: "rgba(179, 211, 210, 0.35)",
+  },
+  card: {
+    backgroundColor: "white",
+    borderRadius: 16,
+    padding: 18,
+    borderWidth: 1,
+    borderColor: "rgba(20, 39, 45, 0.06)",
+    shadowColor: "#000",
     shadowOffset: { width: 0, height: 1 },
     shadowOpacity: 0.05,
     shadowRadius: 2,
     elevation: 2,
-    borderWidth: 1,
-    borderColor: 'rgba(20, 39, 45, 0.05)',
+    gap: 12,
   },
-  cardRow: {
-    flexDirection: 'row',
-    gap: 16,
-  },
-  indicatorBar: {
-    width: 4,
-    borderRadius: 2,
-    backgroundColor: '#7ea69d',
-  },
-  cardContent: {
-    flex: 1,
-    gap: 16,
+  cardHeaderRow: {
+    flexDirection: "row",
+    alignItems: "center",
+    justifyContent: "space-between",
   },
   cardTitle: {
-    color: '#14272d',
-    fontSize: 16,
-    fontWeight: '600',
-    marginBottom: 16,
+    color: "#14272d",
+    fontSize: 15,
+    fontWeight: "700",
   },
-  infoRow: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    gap: 12,
-  },
-  iconCircle: {
-    width: 40,
-    height: 40,
-    borderRadius: 20,
-    backgroundColor: '#e7ede7',
-    alignItems: 'center',
-    justifyContent: 'center',
-  },
-  infoText: {
-    fontSize: 14,
-    color: '#14272d',
-  },
-  infoSubtext: {
+  cardSubtitle: {
+    color: "#7ea69d",
     fontSize: 12,
-    color: '#7ea69d',
+    marginTop: -6,
   },
-  progressCard: {
-    backgroundColor: '#e7ede7',
-    borderRadius: 16,
-    padding: 20,
+  emptyText: {
+    color: "#7ea69d",
+    fontSize: 13,
   },
-  progressHeader: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    justifyContent: 'space-between',
+  list: {
+    gap: 10,
   },
-  progressTitle: {
-    color: '#14272d',
-    fontSize: 16,
-    fontWeight: '600',
+  planItem: {
+    flexDirection: "row",
+    alignItems: "center",
+    gap: 10,
+    borderWidth: 1,
+    borderColor: "rgba(20, 39, 45, 0.08)",
+    borderRadius: 12,
+    paddingVertical: 10,
+    paddingHorizontal: 12,
+    backgroundColor: "rgba(231, 237, 231, 0.25)",
   },
-  progressSubtext: {
-    fontSize: 12,
-    color: '#7ea69d',
-    marginTop: 4,
+  planItemDone: {
+    backgroundColor: "rgba(179, 211, 210, 0.2)",
+    borderColor: "rgba(126, 166, 157, 0.35)",
   },
-  circularProgress: {
-    position: 'relative',
-    width: 64,
-    height: 64,
+  planDot: {
+    width: 10,
+    height: 10,
+    borderRadius: 5,
+    backgroundColor: "#dfc485",
   },
-  progressPercentage: {
-    position: 'absolute',
-    top: 0,
-    left: 0,
-    right: 0,
-    bottom: 0,
-    alignItems: 'center',
-    justifyContent: 'center',
+  planDotDone: {
+    backgroundColor: "#2f675c",
   },
-  progressText: {
+  planName: {
+    color: "#14272d",
     fontSize: 14,
-    color: '#14272d',
+    fontWeight: "600",
   },
-  weeklyContainer: {
-    flexDirection: 'row',
-    justifyContent: 'space-between',
-    alignItems: 'center',
+  planMeta: {
+    color: "#7ea69d",
+    fontSize: 12,
+    marginTop: 2,
   },
-  dayColumn: {
-    flexDirection: 'column',
-    alignItems: 'center',
+  planStatus: {
+    color: "#7ea69d",
+    fontSize: 12,
+    fontWeight: "700",
+  },
+  weekRow: {
+    flexDirection: "row",
+    justifyContent: "space-between",
+    alignItems: "center",
+  },
+  weekItem: {
+    alignItems: "center",
     gap: 8,
+    flex: 1,
   },
-  dayLabel: {
+  weekDot: {
+    width: 14,
+    height: 14,
+    borderRadius: 7,
+  },
+  weekDotDone: {
+    backgroundColor: "#2f675c",
+  },
+  weekDotPending: {
+    backgroundColor: "rgba(179, 211, 210, 0.45)",
+  },
+  weekLabel: {
+    color: "#7ea69d",
     fontSize: 12,
-    color: '#7ea69d',
-  },
-  dayDot: {
-    width: 12,
-    height: 12,
-    borderRadius: 6,
-  },
-  dayDotCompleted: {
-    backgroundColor: '#7ea69d',
-  },
-  dayDotPartial: {
-    backgroundColor: 'rgba(223, 196, 133, 0.5)',
-  },
-  dayDotIncomplete: {
-    backgroundColor: 'rgba(179, 211, 210, 0.3)',
-  },
-  adherenceCard: {
-    backgroundColor: '#b3d3d2',
-    borderRadius: 16,
-    padding: 20,
-  },
-  adherenceHeader: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    gap: 12,
-    marginBottom: 12,
-  },
-  adherenceTitle: {
-    color: '#14272d',
-    fontSize: 16,
-    fontWeight: '600',
+    fontWeight: "700",
   },
   adherenceBar: {
-    flexDirection: 'row',
+    marginTop: 2,
+    flexDirection: "row",
     gap: 4,
-    marginBottom: 8,
   },
   adherenceSegment: {
     flex: 1,
-    height: 32,
-    borderRadius: 4,
+    height: 8,
+    borderRadius: 999,
   },
-  adherenceCompleted: {
-    backgroundColor: '#7ea69d',
+  adherenceSegmentDone: {
+    backgroundColor: "#7ea69d",
   },
-  adherenceIncomplete: {
-    backgroundColor: 'rgba(126, 166, 157, 0.2)',
+  adherenceSegmentPending: {
+    backgroundColor: "rgba(126, 166, 157, 0.2)",
   },
-  adherenceText: {
-    fontSize: 14,
-    color: '#14272d',
+  timelineRow: {
+    flexDirection: "row",
+    alignItems: "center",
+    gap: 10,
+    paddingVertical: 2,
   },
-  insightCard: {
-    backgroundColor: 'rgba(223, 196, 133, 0.2)',
-    borderRadius: 16,
-    padding: 20,
-    borderWidth: 1,
-    borderColor: 'rgba(223, 196, 133, 0.3)',
+  timelineTime: {
+    color: "#7ea69d",
+    width: 46,
+    fontSize: 12,
+    fontWeight: "700",
   },
-  insightText: {
-    fontSize: 14,
-    color: '#14272d',
+  timelineLabel: {
+    flex: 1,
+    color: "#14272d",
+    fontSize: 13,
+    fontWeight: "600",
   },
   addButton: {
-    backgroundColor: 'white',
+    height: 48,
     borderRadius: 16,
-    padding: 20,
-    shadowColor: '#000',
-    shadowOffset: { width: 0, height: 1 },
-    shadowOpacity: 0.05,
-    shadowRadius: 2,
-    elevation: 2,
+    backgroundColor: "#2f675c",
+    alignItems: "center",
+    justifyContent: "center",
     borderWidth: 1,
-    borderColor: 'rgba(20, 39, 45, 0.05)',
-    flexDirection: 'row',
-    alignItems: 'center',
-    justifyContent: 'center',
-    gap: 8,
+    borderColor: "rgba(20, 39, 45, 0.08)",
   },
   addButtonText: {
-    color: '#7ea69d',
-    fontSize: 16,
+    color: "white",
+    fontSize: 14,
+    fontWeight: "700",
+  },
+  errorCard: {
+    marginHorizontal: 24,
+    backgroundColor: "rgba(223, 196, 133, 0.18)",
+    borderRadius: 16,
+    padding: 16,
+    borderWidth: 1,
+    borderColor: "rgba(190, 162, 98, 0.35)",
+  },
+  errorText: {
+    color: "#14272d",
+    fontSize: 13,
   },
 });

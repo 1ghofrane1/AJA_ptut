@@ -13,7 +13,7 @@ interface WelcomeScreenProps {
 
 export function WelcomeScreen({ onNavigate }: WelcomeScreenProps) {
   return (
-    <View style={styles.container}>
+    <View className="flex-1 bg-aja-cream p-6" style={styles.container}>
       {/* Subtle abstract background shapes */}
       <View style={styles.backgroundShapes}>
         <View style={styles.shape1} />
@@ -30,7 +30,7 @@ export function WelcomeScreen({ onNavigate }: WelcomeScreenProps) {
       </View>
 
       {/* Main content */}
-      <View style={styles.mainContent}>
+      <View className="z-10 w-full max-w-96 flex-1 self-center items-center justify-center" style={styles.mainContent}>
         {/* Logo */}
         <View style={styles.logoContainer}>
           <Image 
@@ -50,7 +50,7 @@ export function WelcomeScreen({ onNavigate }: WelcomeScreenProps) {
         </View>
 
         {/* CTAs */}
-        <View style={styles.ctaContainer}>
+        <View className="mt-8 w-full gap-3" style={styles.ctaContainer}>
           <TouchableOpacity
             onPress={() => onNavigate("login")}
             style={styles.loginButton}

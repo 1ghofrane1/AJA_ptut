@@ -20,6 +20,29 @@ app.use(bodyParser.urlencoded({ extended: true }));
 const users = new Map();
 let userIdCounter = 1;
 
+const EMAIL_REGEX =
+  /^[a-z0-9.!#$%&'*+/=?^_`{|}~-]+@[a-z0-9](?:[a-z0-9-]{0,61}[a-z0-9])?(?:\.[a-z0-9](?:[a-z0-9-]{0,61}[a-z0-9])?)+$/i;
+
+const COMMON_EMAIL_DOMAIN_FIXES = {
+  'gamil.com': 'gmail.com',
+  'gmai.com': 'gmail.com',
+  'gmail.fr': 'gmail.com',
+  'gmal.com': 'gmail.com',
+  'gmial.com': 'gmail.com',
+  'gnail.com': 'gmail.com',
+  'googlemail.fr': 'gmail.com',
+  'hotmial.com': 'hotmail.com',
+  'hotmal.com': 'hotmail.com',
+  'icloud.fr': 'icloud.com',
+  'icloud,com': 'icloud.com',
+  'outlok.com': 'outlook.com',
+  'outllok.com': 'outlook.com',
+  'outlook.fr': 'outlook.com',
+  'yaho.com': 'yahoo.com',
+  'yahho.com': 'yahoo.com',
+  'yhoo.com': 'yahoo.com'
+};
+
 // Mock supplement intake tracking database
 const supplementIntakes = new Map(); // userId -> array of intake records
 
@@ -85,24 +108,102 @@ const createUserResponse = (user) => {
   };
 };
 
+const normalizeEmail = (email) => String(email || '').trim().toLowerCase();
+
+const validateEmail = (email) => {
+  const normalizedEmail = normalizeEmail(email);
+
+  if (!normalizedEmail || !EMAIL_REGEX.test(normalizedEmail)) {
+    return { valid: false, normalizedEmail, reason: 'invalid_email' };
+  }
+
+  const [localPart, domain] = normalizedEmail.split('@');
+  if (
+    !localPart ||
+    !domain ||
+    localPart.startsWith('.') ||
+    localPart.endsWith('.') ||
+    localPart.includes('..') ||
+    domain.startsWith('.') ||
+    domain.endsWith('.') ||
+    domain.includes('..')
+  ) {
+    return { valid: false, normalizedEmail, reason: 'invalid_email' };
+  }
+
+  const suggestedDomain = COMMON_EMAIL_DOMAIN_FIXES[domain];
+  if (suggestedDomain) {
+    return {
+      valid: false,
+      normalizedEmail,
+      reason: 'typo_domain',
+      suggestion: `${localPart}@${suggestedDomain}`
+    };
+  }
+
+  return { valid: true, normalizedEmail };
+};
+
+const findUserByEmail = (email) => {
+  const normalizedEmail = normalizeEmail(email);
+
+  for (const [, user] of users) {
+    if (normalizeEmail(user.email) === normalizedEmail) {
+      return user;
+    }
+  }
+
+  return null;
+};
+
 // Health check
 app.get('/', (req, res) => {
   res.json({ message: 'myAja Backend API - Mock Server', status: 'running' });
 });
 
+app.get('/auth/check-email', (req, res) => {
+  const emailValidation = validateEmail(req.query.email);
+
+  if (!emailValidation.valid) {
+    return res.json({
+      available: false,
+      normalized_email: emailValidation.normalizedEmail,
+      reason: emailValidation.reason,
+      suggestion: emailValidation.suggestion || null
+    });
+  }
+
+  const existingUser = findUserByEmail(emailValidation.normalizedEmail);
+
+  return res.json({
+    available: !existingUser,
+    normalized_email: emailValidation.normalizedEmail,
+    reason: existingUser ? 'already_exists' : null,
+    suggestion: null
+  });
+});
+
 // Signup endpoint
 app.post('/auth/signup', (req, res) => {
   const { email, password } = req.body;
+  const emailValidation = validateEmail(email);
 
   if (!email || !password) {
     return res.status(400).json({ detail: 'Email and password are required' });
   }
 
-  // Check if user already exists
-  for (const [id, user] of users) {
-    if (user.email === email) {
-      return res.status(400).json({ detail: 'User already exists' });
-    }
+  if (!emailValidation.valid) {
+    return res.status(400).json({
+      detail: 'Invalid email address',
+      reason: emailValidation.reason,
+      suggestion: emailValidation.suggestion || null
+    });
+  }
+
+  const normalizedEmail = emailValidation.normalizedEmail;
+
+  if (findUserByEmail(normalizedEmail)) {
+    return res.status(409).json({ detail: 'User already exists' });
   }
 
   // Create new user
@@ -110,7 +211,7 @@ app.post('/auth/signup', (req, res) => {
   const now = new Date().toISOString();
   const user = {
     id: userId,
-    email,
+    email: normalizedEmail,
     password, // In real app, this should be hashed!
     role: 'user',
     profile: {},
@@ -135,6 +236,7 @@ app.post('/auth/signup', (req, res) => {
 // Login endpoint
 app.post('/auth/login', (req, res) => {
   const { email, password } = req.body;
+  const normalizedEmail = normalizeEmail(email);
 
   console.log(`🔐 Login attempt: ${email}`);
 
@@ -144,15 +246,8 @@ app.post('/auth/login', (req, res) => {
   }
 
   // Find user
-  let foundUser = null;
-  for (const [id, user] of users) {
-    if (user.email === email && user.password === password) {
-      foundUser = user;
-      break;
-    }
-  }
-
-  if (!foundUser) {
+  const foundUser = findUserByEmail(normalizedEmail);
+  if (!foundUser || foundUser.password !== password) {
     console.log(`❌ Login failed: Invalid credentials for ${email} (user not found or wrong password)`);
     return res.status(401).json({ detail: 'Invalid credentials' });
   }

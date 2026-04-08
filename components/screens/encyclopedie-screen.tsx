@@ -135,9 +135,9 @@ export function EncyclopedieScreen() {
 
   const filteredSupplements = supplements;if (selectedSupplement) {
     return (
-      <ScrollView style={styles.container} contentContainerStyle={styles.contentContainer}>
+      <ScrollView className="flex-1 bg-aja-cream" style={styles.container} contentContainerStyle={styles.contentContainer}>
         {/* Header */}
-        <View style={styles.header}>
+        <View className="rounded-b-3xl bg-aja-ink px-6 py-6" style={styles.header}>
           <TouchableOpacity
             onPress={() => setSelectedSupplement(null)}
             style={styles.backButton}
@@ -207,9 +207,9 @@ export function EncyclopedieScreen() {
   }
 
   return (
-    <ScrollView style={styles.container} contentContainerStyle={styles.contentContainer}>
+    <ScrollView className="flex-1 bg-aja-cream" style={styles.container} contentContainerStyle={styles.contentContainer}>
       {/* Header */}
-      <View style={styles.header}>
+      <View className="rounded-b-3xl bg-aja-ink px-6 py-6" style={styles.header}>
         <Text style={styles.headerTitle}>Encyclopédie</Text>
         <Text style={styles.headerSubtitle}>Base de connaissances</Text>
       </View>
@@ -605,4 +605,3 @@ const styles = StyleSheet.create({
     fontSize: 12,
   },
 });
-
