@@ -266,6 +266,22 @@ export async function getDashboard() {
   return data;
 }
 
+export type HomeQuestionResponse = {
+  id: string;
+  supplement_id: string;
+  supplement_name: string;
+  category: string;
+  question: string;
+  answer: string;
+};
+
+export async function getDashboardRandomQuestions(limit = 4) {
+  const { data } = await api.get<HomeQuestionResponse[]>("/dashboard/random-questions", {
+    params: { limit },
+  });
+  return data;
+}
+
 // ============================================
 // ENCYCLOPEDIE
 // ============================================

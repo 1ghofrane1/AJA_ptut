@@ -1,3 +1,4 @@
+import { HeaderLogoutButton } from "@/components/header-logout-button";
 import { useAuth } from "@/context/auth";
 import {
   getProgress,
@@ -7,7 +8,17 @@ import {
 } from "@/services/api";
 import * as Haptics from "expo-haptics";
 import { LineChart } from "react-native-chart-kit";
-import { Activity, Calendar, Check, Flame, TrendingUp, X, ChevronLeft, ChevronRight } from "lucide-react-native";
+import {
+  Activity,
+  Check,
+  ChevronLeft,
+  ChevronRight,
+  ClipboardList,
+  Flame,
+  Target,
+  TrendingUp,
+  X,
+} from "lucide-react-native";
 import { useEffect, useMemo, useRef, useState } from "react";
 import {
   ActivityIndicator,
@@ -195,7 +206,7 @@ export function SuiviScreen() {
     return () => {
       mounted = false;
     };
-  }, [anchorYmd]);
+  }, [anchorYmd, selectedYmd]);
 
   useEffect(() => {
     let mounted = true;
@@ -235,13 +246,30 @@ export function SuiviScreen() {
     setSubmittedTakenByGroupId(nextTaken);
     setPendingTakenAtByGroupId({});
     setDayLoading(false);
-  }, [dayData?.selected_date]);
+  }, [dayData?.expected_supplements, dayData?.selected_date]);
 
   const pendingChanges = useMemo(() => {
     const ids = Object.keys(takenByGroupId);
     const changes = ids.filter((id) => (takenByGroupId[id] ?? false) !== (submittedTakenByGroupId[id] ?? false));
     return changes;
   }, [submittedTakenByGroupId, takenByGroupId]);
+
+  const takenEventsForDay = useMemo(
+    () => (dayData?.daily_intakes ?? []).filter((item) => item.taken).slice(-4).reverse(),
+    [dayData?.daily_intakes],
+  );
+
+  const weeklyCompletedCount = useMemo(
+    () => (metrics?.weekly_data ?? []).filter((item) => item.completed).length,
+    [metrics?.weekly_data],
+  );
+
+  const adherencePercent = useMemo(() => {
+    const values = metrics?.adherence_data ?? [];
+    if (values.length === 0) return 0;
+    const completed = values.filter(Boolean).length;
+    return Math.round((completed / values.length) * 100);
+  }, [metrics?.adherence_data]);
 
   const trendStats = useMemo(() => {
     const evolution = metrics?.evolution_data ?? [];
@@ -423,10 +451,7 @@ export function SuiviScreen() {
                 {displayName}, {headerSubtitle}
               </Text>
             </View>
-            <View style={styles.headerPill}>
-              <Calendar size={16} color="#b3d3d2" />
-              <Text style={styles.headerPillText}>{formatDateLabel(selectedYmd)}</Text>
-            </View>
+            <HeaderLogoutButton />
           </View>
 
           <View
@@ -448,7 +473,7 @@ export function SuiviScreen() {
               activeOpacity={0.9}
             >
               <Text style={[styles.segmentText, segment === "today" && styles.segmentTextActive]}>
-                Aujourd'hui
+                {"Aujourd'hui"}
               </Text>
             </TouchableOpacity>
             <TouchableOpacity
@@ -523,15 +548,93 @@ export function SuiviScreen() {
                       <View style={{ flex: 1, gap: 4 }}>
                         <Text style={styles.cardTitle}>Progression</Text>
                         <Text style={styles.cardSubtitle}>
-                          {(dayData?.supplements_taken ?? 0)}/{dayData?.supplements_total ?? 0} compléments
+                          {(dayData?.supplements_taken ?? 0)}/{dayData?.supplements_total ?? 0} complements valides
                         </Text>
                       </View>
                       <ProgressRing progress={dayData?.today_progress ?? 0} />
                     </View>
+                    <View style={styles.progressStatsRow}>
+                      <View style={styles.progressStatItem}>
+                        <Target size={15} color="#2f675c" />
+                        <Text style={styles.progressStatValue}>{dayData?.today_progress ?? 0}%</Text>
+                        <Text style={styles.progressStatLabel}>Progression</Text>
+                      </View>
+                      <View style={styles.progressStatDivider} />
+                      <View style={styles.progressStatItem}>
+                        <Check size={15} color="#2f675c" />
+                        <Text style={styles.progressStatValue}>{dayData?.supplements_taken ?? 0}</Text>
+                        <Text style={styles.progressStatLabel}>Pris</Text>
+                      </View>
+                      <View style={styles.progressStatDivider} />
+                      <View style={styles.progressStatItem}>
+                        <ClipboardList size={15} color="#2f675c" />
+                        <Text style={styles.progressStatValue}>{dayData?.supplements_total ?? 0}</Text>
+                        <Text style={styles.progressStatLabel}>Prevus</Text>
+                      </View>
+                    </View>
                   </View>
 
                   <View style={styles.card}>
-                    <Text style={styles.cardTitle}>A prendre</Text>
+                    <View style={styles.cardHeaderRow}>
+                      <Text style={styles.cardTitle}>Cette semaine</Text>
+                      <Text style={styles.weekSummaryValue}>
+                        {weeklyCompletedCount}/{metrics?.weekly_data?.length ?? 0}
+                      </Text>
+                    </View>
+                    <Text style={styles.cardSubtitle}>Regularite sur les 7 derniers jours.</Text>
+                    <View style={styles.weekRow}>
+                      {(metrics?.weekly_data ?? []).map((d, idx) => (
+                        <View key={`${d.day}-${idx}`} style={styles.weekItem}>
+                          <View
+                            style={[
+                              styles.weekDot,
+                              d.completed ? styles.weekDotDone : styles.weekDotPending,
+                            ]}
+                          />
+                          <Text style={styles.weekLabel}>{d.day}</Text>
+                        </View>
+                      ))}
+                    </View>
+                    <View style={styles.adherenceRow}>
+                      <View style={styles.adherenceBar}>
+                        {(metrics?.adherence_data ?? []).map((isDone, index) => (
+                          <View
+                            key={`adherence-${index}`}
+                            style={[
+                              styles.adherenceSegment,
+                              isDone
+                                ? styles.adherenceSegmentDone
+                                : styles.adherenceSegmentPending,
+                            ]}
+                          />
+                        ))}
+                      </View>
+                      <Text style={styles.adherenceValue}>{adherencePercent}%</Text>
+                    </View>
+                  </View>
+
+                  <View style={styles.card}>
+                    <Text style={styles.cardTitle}>Plan du jour</Text>
+                    <Text style={styles.cardSubtitle}>
+                      {Math.max(
+                        0,
+                        (dayData?.supplements_total ?? 0) - (dayData?.supplements_taken ?? 0),
+                      )}{" "}
+                      complement
+                      {Math.max(
+                        0,
+                        (dayData?.supplements_total ?? 0) - (dayData?.supplements_taken ?? 0),
+                      ) > 1
+                        ? "s"
+                        : ""}{" "}
+                      restant
+                      {Math.max(
+                        0,
+                        (dayData?.supplements_total ?? 0) - (dayData?.supplements_taken ?? 0),
+                      ) > 1
+                        ? "s"
+                        : ""}
+                    </Text>
                     {(dayData?.expected_supplements ?? []).length === 0 ? (
                       <Text style={styles.emptyText}>Aucune prise planifiee.</Text>
                     ) : (
@@ -548,7 +651,7 @@ export function SuiviScreen() {
                           );
                           const objectiveText =
                             objectives.length > 0
-                              ? `${objectives.slice(0, 2).join(" • ")}${objectives.length > 2 ? ` +${objectives.length - 2}` : ""}`
+                              ? `${objectives.slice(0, 2).join(" - ")}${objectives.length > 2 ? ` +${objectives.length - 2}` : ""}`
                               : null;
                           return (
                             <Pressable
@@ -568,7 +671,7 @@ export function SuiviScreen() {
                                 {(tLabel || group.dosage) && (
                                   <Text style={styles.checkMeta}>
                                     {tLabel ? tLabel : "Libre"}
-                                    {group.dosage ? ` • ${group.dosage}` : ""}
+                                    {group.dosage ? ` - ${group.dosage}` : ""}
                                   </Text>
                                 )}
                                 {!!objectiveText && (
@@ -585,10 +688,13 @@ export function SuiviScreen() {
                   </View>
 
                   <View style={styles.card}>
-                    <Text style={styles.cardTitle}>Journal</Text>
-                    <Text style={styles.cardSubtitle}>Historique des prises pour la journee.</Text>
+                    <View style={styles.cardHeaderRow}>
+                      <Text style={styles.cardTitle}>Dernieres prises</Text>
+                      <Flame size={16} color="#7ea69d" />
+                    </View>
+                    <Text style={styles.cardSubtitle}>Les prises validees pour cette journee.</Text>
                     <View style={{ gap: 10 }}>
-                      {(dayData?.daily_intakes ?? []).slice(0, 10).map((event, idx) => (
+                      {takenEventsForDay.map((event, idx) => (
                         <View key={`${event.time}-${idx}`} style={styles.timelineRow}>
                           <View
                             style={[
@@ -604,7 +710,7 @@ export function SuiviScreen() {
                           </Text>
                         </View>
                       ))}
-                      {(dayData?.daily_intakes ?? []).length === 0 && (
+                      {takenEventsForDay.length === 0 && (
                         <Text style={styles.emptyText}>Aucune prise enregistree.</Text>
                       )}
                     </View>
@@ -725,25 +831,6 @@ export function SuiviScreen() {
                     )}
                   </View>
 
-                  <View style={styles.card}>
-                    <Text style={styles.cardTitle}>Semaine</Text>
-                    <Text style={styles.cardSubtitle}>
-                      Jours complets sur les 7 derniers jours.
-                    </Text>
-                    <View style={styles.weekRow}>
-                      {(metrics?.weekly_data ?? []).map((d, idx) => (
-                        <View key={`${d.day}-${idx}`} style={styles.weekItem}>
-                          <View
-                            style={[
-                              styles.weekDot,
-                              d.completed ? styles.weekDotDone : styles.weekDotPending,
-                            ]}
-                          />
-                          <Text style={styles.weekLabel}>{d.day}</Text>
-                        </View>
-                      ))}
-                    </View>
-                  </View>
                 </>
               )}
 
@@ -751,7 +838,7 @@ export function SuiviScreen() {
                 <View style={styles.card}>
                   <Text style={styles.cardTitle}>Historique (30 jours)</Text>
                   <Text style={styles.cardSubtitle}>
-                    {formatDateLabel(addDaysYmd(anchorYmd, -29))} → {formatDateLabel(anchorYmd)}
+                    {formatDateLabel(addDaysYmd(anchorYmd, -29))} Ã¢â€ â€™ {formatDateLabel(anchorYmd)}
                   </Text>
                   <View style={styles.heatmapGrid}>
                     {(metrics?.monthly_data ?? []).map((cell) => {
@@ -816,7 +903,7 @@ export function SuiviScreen() {
                   <View style={{ flex: 1, gap: 4 }}>
                     <Text style={styles.cardTitle}>Progression</Text>
                     <Text style={styles.cardSubtitle}>
-                      {sheetData.supplements_taken}/{sheetData.supplements_total} compléments
+                      {sheetData.supplements_taken}/{sheetData.supplements_total} complÃƒÂ©ments
                     </Text>
                   </View>
                 </View>
@@ -836,7 +923,7 @@ export function SuiviScreen() {
                         );
                         const objectiveText =
                           objectives.length > 0
-                            ? `${objectives.slice(0, 2).join(" • ")}${objectives.length > 2 ? ` +${objectives.length - 2}` : ""}`
+                            ? `${objectives.slice(0, 2).join(" Ã¢â‚¬Â¢ ")}${objectives.length > 2 ? ` +${objectives.length - 2}` : ""}`
                             : null;
                         return (
                           <View
@@ -851,7 +938,7 @@ export function SuiviScreen() {
                               {(tLabel || group.dosage) && (
                                 <Text style={styles.checkMeta}>
                                   {tLabel ? tLabel : "Libre"}
-                                  {group.dosage ? ` • ${group.dosage}` : ""}
+                                  {group.dosage ? ` Ã¢â‚¬Â¢ ${group.dosage}` : ""}
                                 </Text>
                               )}
                               {!!objectiveText && (
@@ -945,22 +1032,6 @@ const styles = StyleSheet.create({
     fontSize: 13,
     marginTop: 4,
   },
-  headerPill: {
-    flexDirection: "row",
-    alignItems: "center",
-    gap: 8,
-    backgroundColor: "rgba(255, 255, 255, 0.12)",
-    borderWidth: 1,
-    borderColor: "rgba(179, 211, 210, 0.28)",
-    paddingHorizontal: 12,
-    height: 34,
-    borderRadius: 999,
-  },
-  headerPillText: {
-    color: "#b3d3d2",
-    fontSize: 12,
-    fontWeight: "600",
-  },
   segmentTrack: {
     position: "relative",
     flexDirection: "row",
@@ -995,7 +1066,7 @@ const styles = StyleSheet.create({
   },
   mainContent: {
     paddingHorizontal: 24,
-    marginTop: -16,
+    marginTop: 14,
     gap: 16,
   },
   loadingCard: {
@@ -1064,6 +1135,34 @@ const styles = StyleSheet.create({
     flexDirection: "row",
     alignItems: "center",
     gap: 16,
+  },
+  progressStatsRow: {
+    marginTop: 16,
+    paddingTop: 16,
+    borderTopWidth: 1,
+    borderTopColor: "rgba(20, 39, 45, 0.08)",
+    flexDirection: "row",
+    alignItems: "center",
+  },
+  progressStatItem: {
+    flex: 1,
+    alignItems: "center",
+    gap: 4,
+  },
+  progressStatDivider: {
+    width: 1,
+    height: 32,
+    backgroundColor: "rgba(20, 39, 45, 0.09)",
+  },
+  progressStatValue: {
+    color: "#14272d",
+    fontSize: 18,
+    fontWeight: "800",
+  },
+  progressStatLabel: {
+    color: "#7ea69d",
+    fontSize: 11,
+    fontWeight: "700",
   },
   ringLabel: {
     position: "absolute",
@@ -1190,6 +1289,11 @@ const styles = StyleSheet.create({
     alignItems: "center",
     marginTop: 12,
   },
+  weekSummaryValue: {
+    color: "#2f675c",
+    fontSize: 14,
+    fontWeight: "800",
+  },
   weekItem: {
     alignItems: "center",
     gap: 8,
@@ -1210,6 +1314,33 @@ const styles = StyleSheet.create({
     color: "#7ea69d",
     fontSize: 12,
     fontWeight: "700",
+  },
+  adherenceRow: {
+    flexDirection: "row",
+    alignItems: "center",
+    gap: 12,
+    marginTop: 14,
+  },
+  adherenceBar: {
+    flex: 1,
+    flexDirection: "row",
+    gap: 5,
+  },
+  adherenceSegment: {
+    flex: 1,
+    height: 8,
+    borderRadius: 999,
+  },
+  adherenceSegmentDone: {
+    backgroundColor: "#7ea69d",
+  },
+  adherenceSegmentPending: {
+    backgroundColor: "rgba(126, 166, 157, 0.2)",
+  },
+  adherenceValue: {
+    color: "#14272d",
+    fontSize: 12,
+    fontWeight: "800",
   },
   emptyText: {
     color: "#7ea69d",

@@ -1,3 +1,4 @@
+import { HeaderLogoutButton } from "@/components/header-logout-button";
 import {
     Bone,
     Brain,
@@ -16,6 +17,7 @@ import type {
 import { useEffect, useMemo, useState } from "react";
 import {
     ActivityIndicator,
+    Image,
     ScrollView,
     StyleSheet,
     Text,
@@ -26,6 +28,47 @@ import {
 
 type SupplementSummary = EncyclopedieSupplementSummaryResponse;
 type SupplementDetail = EncyclopedieSupplementDetailResponse;
+
+const DEFAULT_SUPPLEMENT_IMAGE = require("@/assets/images/logo aja 1.png");
+
+const SUPPLEMENT_IMAGE_SOURCES: Record<string, number> = {
+  "5-htp": require("@/assets/images/complements/5-htp.png"),
+  "alpha-gpc": require("@/assets/images/complements/alpha-gpc.png"),
+  "alpha-lactalbumin": require("@/assets/images/complements/alpha-lactalbumine.png"),
+  ashwagandha: require("@/assets/images/complements/ashwaganda.png"),
+  "binaural-beats": require("@/assets/images/complements/binaural beats.png"),
+  caffeine: require("@/assets/images/complements/caf\u00e9ine.png"),
+  cannabis: require("@/assets/images/complements/cannabis.png"),
+  "cognitive-behavioral-therapy": require("@/assets/images/complements/cognitive-behavioral-therapy.png"),
+  "exogenous-ketones": require("@/assets/images/complements/exogenous-ketones.png"),
+  "fish-oil": require("@/assets/images/complements/fish-oil.png"),
+  "ginkgo-biloba": require("@/assets/images/complements/Biloba.png"),
+  glycine: require("@/assets/images/complements/Glycine.png"),
+  kava: require("@/assets/images/complements/kava.png"),
+  "l-tyrosine": require("@/assets/images/complements/l-tyrosine.png"),
+  lavender: require("@/assets/images/complements/lavande.png"),
+  "lemon-balm": require("@/assets/images/complements/melisse-officinale.png"),
+  "light-therapy": require("@/assets/images/complements/luminoth\u00e9rapie.png"),
+  magnesium: require("@/assets/images/complements/magn\u00e9sium.png"),
+  melatonin: require("@/assets/images/complements/m\u00e9latonine.png"),
+  "panax-ginseng-korean-ginseng": require("@/assets/images/complements/ginseng panax.png"),
+  passionflower: require("@/assets/images/complements/passiflore.png"),
+  pqq: require("@/assets/images/complements/pqq.png"),
+  probiotics: require("@/assets/images/complements/probiotic.png"),
+  "progressive-muscle-relaxation": require("@/assets/images/complements/relaxation musculaire.png"),
+  quercetin: require("@/assets/images/complements/Querc\u00e9tine.png"),
+  saffron: require("@/assets/images/complements/safran.png"),
+  "sleep-hygiene-training": require("@/assets/images/complements/hyg\u00e9ne sant\u00e9.png"),
+  theanine: require("@/assets/images/complements/th\u00e9anine.png"),
+  valerian: require("@/assets/images/complements/val\u00e9riane.png"),
+  "vitamin-b6": require("@/assets/images/complements/vitamine B6.png"),
+  "vitamin-d": require("@/assets/images/complements/vitamine D.png"),
+  yohimbine: require("@/assets/images/complements/yohimbine.png"),
+};
+
+function getSupplementImageSource(supplementId: string) {
+  return SUPPLEMENT_IMAGE_SOURCES[supplementId] ?? DEFAULT_SUPPLEMENT_IMAGE;
+}
 
 interface AccordionItemProps {
   icon: React.ComponentType<any>;
@@ -133,17 +176,22 @@ export function EncyclopedieScreen() {
     }
   }
 
-  const filteredSupplements = supplements;if (selectedSupplement) {
+  const filteredSupplements = supplements;
+
+  if (selectedSupplement) {
     return (
       <ScrollView className="flex-1 bg-aja-cream" style={styles.container} contentContainerStyle={styles.contentContainer}>
         {/* Header */}
         <View className="rounded-b-3xl bg-aja-ink px-6 py-6" style={styles.header}>
-          <TouchableOpacity
-            onPress={() => setSelectedSupplement(null)}
-            style={styles.backButton}
-          >
-            <Text style={styles.backText}>← Retour</Text>
-          </TouchableOpacity>
+          <View style={styles.headerTopRow}>
+            <TouchableOpacity
+              onPress={() => setSelectedSupplement(null)}
+              style={styles.backButton}
+            >
+              <Text style={styles.backText}>← Retour</Text>
+            </TouchableOpacity>
+            <HeaderLogoutButton />
+          </View>
           <Text style={styles.headerTitle}>{selectedSupplement.name}</Text>
           <Text style={styles.headerSubtitle}>{selectedSupplement.category}</Text>
         </View>
@@ -151,7 +199,14 @@ export function EncyclopedieScreen() {
         {/* Content */}
         <View style={styles.mainContent}>
           {/* Description */}
-          <View style={styles.card}>
+          <View style={styles.detailSummaryCard}>
+            <View style={styles.detailImageShell}>
+              <Image
+                source={getSupplementImageSource(selectedSupplement.id)}
+                style={styles.detailImage}
+                resizeMode="cover"
+              />
+            </View>
             <Text style={styles.descriptionText}>{selectedSupplement.description}</Text>
           </View>
 
@@ -210,8 +265,13 @@ export function EncyclopedieScreen() {
     <ScrollView className="flex-1 bg-aja-cream" style={styles.container} contentContainerStyle={styles.contentContainer}>
       {/* Header */}
       <View className="rounded-b-3xl bg-aja-ink px-6 py-6" style={styles.header}>
-        <Text style={styles.headerTitle}>Encyclopédie</Text>
-        <Text style={styles.headerSubtitle}>Base de connaissances</Text>
+        <View style={styles.headerTopRow}>
+          <View style={{ flex: 1 }}>
+            <Text style={styles.headerTitle}>Encyclopédie</Text>
+            <Text style={styles.headerSubtitle}>Base de connaissances</Text>
+          </View>
+          <HeaderLogoutButton />
+        </View>
       </View>
 
       {/* Content */}
@@ -233,7 +293,12 @@ export function EncyclopedieScreen() {
         </View>
 
         {/* Entry Point Cards */}
-        <View style={styles.categoriesGrid}>
+        <ScrollView
+          horizontal
+          showsHorizontalScrollIndicator={false}
+          contentContainerStyle={styles.categoriesRow}
+          style={styles.categoriesScroll}
+        >
           {categories.map((category, index) => {
             const Icon = category.icon;
             const isActive =
@@ -241,29 +306,38 @@ export function EncyclopedieScreen() {
             return (
               <TouchableOpacity
                 key={index}
-                style={styles.categoryCard}
+                style={[
+                  styles.categoryCard,
+                  isActive && styles.categoryCardActive,
+                ]}
                 onPress={() => setSelectedCategory(category.label)}
+                activeOpacity={0.9}
               >
-                <View 
+                <View
                   style={[
                     styles.categoryIcon,
-                    { backgroundColor: `${category.color}20` }
+                    { backgroundColor: isActive ? "rgba(255,255,255,0.18)" : `${category.color}18` },
+                    isActive && styles.categoryIconActive,
                   ]}
                 >
-                  <Icon size={24} color={category.color} />
+                  <Icon
+                    size={18}
+                    color={isActive ? "#ffffff" : category.color}
+                  />
                 </View>
                 <Text
                   style={[
                     styles.categoryLabel,
-                    isActive ? { fontWeight: "700" } : null,
+                    isActive && styles.categoryLabelActive,
                   ]}
+                  numberOfLines={1}
                 >
                   {category.label}
                 </Text>
               </TouchableOpacity>
             );
           })}
-        </View>
+        </ScrollView>
 
         {/* Supplement List */}
         <View style={styles.supplementsSection}>
@@ -299,35 +373,49 @@ export function EncyclopedieScreen() {
               <Text style={styles.descriptionText}>Aucun résultat.</Text>
             </View>
           )}
-          {filteredSupplements.map((supplement) => (
-            <TouchableOpacity
-              key={supplement.id}
-              onPress={() => openSupplement(supplement)}
-              style={styles.supplementCard}
-              disabled={selectedLoading}
-            >
-              <View style={styles.supplementIcon}>
-                <Pill size={24} color="#7ea69d" />
-              </View>
-              <View style={styles.supplementInfo}>
-                <Text style={styles.supplementName}>{supplement.name}</Text>
-                <Text style={styles.supplementDescription} numberOfLines={1}>
-                  {supplement.description}
-                </Text>
-                <View style={styles.tagsContainer}>
-                  <View style={styles.categoryTag}>
-                    <Text style={styles.categoryTagText}>{supplement.category}</Text>
-                  </View>
-                  {supplement.molecules.slice(0, 2).map((molecule, index) => (
-                    <View key={index} style={styles.moleculeSmallTag}>
-                      <Text style={styles.moleculeSmallText}>{molecule}</Text>
-                    </View>
-                  ))}
+          <View style={styles.supplementsGrid}>
+            {filteredSupplements.map((supplement) => (
+              <TouchableOpacity
+                key={supplement.id}
+                onPress={() => openSupplement(supplement)}
+                style={styles.supplementCard}
+                disabled={selectedLoading}
+                activeOpacity={0.9}
+              >
+                <View style={styles.supplementImageShell}>
+                  <Image
+                    source={getSupplementImageSource(supplement.id)}
+                    style={styles.supplementImage}
+                    resizeMode="cover"
+                  />
                 </View>
-              </View>
-              <ChevronRight size={20} color="#7ea69d" />
-            </TouchableOpacity>
-          ))}
+
+                <View style={styles.supplementInfo}>
+                  <View style={styles.supplementHeaderRow}>
+                    <View style={styles.categoryTag}>
+                      <Text style={styles.categoryTagText}>{supplement.category}</Text>
+                    </View>
+                    <View style={styles.supplementChevronWrap}>
+                      <ChevronRight size={18} color="#7ea69d" />
+                    </View>
+                  </View>
+                  <Text style={styles.supplementName} numberOfLines={2}>
+                    {supplement.name}
+                  </Text>
+                  <Text style={styles.supplementDescription} numberOfLines={3}>
+                    {supplement.description}
+                  </Text>
+                  <View style={styles.tagsContainer}>
+                    {supplement.molecules.slice(0, 2).map((molecule, index) => (
+                      <View key={index} style={styles.moleculeSmallTag}>
+                        <Text style={styles.moleculeSmallText}>{molecule}</Text>
+                      </View>
+                    ))}
+                  </View>
+                </View>
+              </TouchableOpacity>
+            ))}
+          </View>
         </View>
       </View>
     </ScrollView>
@@ -349,8 +437,14 @@ const styles = StyleSheet.create({
     borderBottomLeftRadius: 24,
     borderBottomRightRadius: 24,
   },
+  headerTopRow: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    justifyContent: 'space-between',
+    gap: 12,
+  },
   backButton: {
-    marginBottom: 8,
+    paddingVertical: 4,
   },
   backText: {
     color: '#b3d3d2',
@@ -382,9 +476,34 @@ const styles = StyleSheet.create({
     borderWidth: 1,
     borderColor: 'rgba(20, 39, 45, 0.05)',
   },
+  detailSummaryCard: {
+    backgroundColor: 'white',
+    borderRadius: 22,
+    padding: 18,
+    gap: 16,
+    shadowColor: '#17363a',
+    shadowOffset: { width: 0, height: 6 },
+    shadowOpacity: 0.08,
+    shadowRadius: 16,
+    elevation: 3,
+    borderWidth: 1,
+    borderColor: 'rgba(20, 39, 45, 0.05)',
+  },
+  detailImageShell: {
+    width: '100%',
+    height: 220,
+    borderRadius: 18,
+    overflow: 'hidden',
+    backgroundColor: '#edf3f0',
+  },
+  detailImage: {
+    width: '100%',
+    height: '100%',
+  },
   descriptionText: {
     color: '#14272d',
     fontSize: 14,
+    lineHeight: 22,
   },
   moleculesCard: {
     backgroundColor: '#e7ede7',
@@ -502,39 +621,61 @@ const styles = StyleSheet.create({
     shadowRadius: 2,
     elevation: 2,
   },
-  categoriesGrid: {
-    flexDirection: 'row',
-    flexWrap: 'wrap',
-    gap: 12,
+  categoriesScroll: {
+    marginHorizontal: -4,
+  },
+  categoriesRow: {
+    paddingHorizontal: 4,
+    gap: 10,
   },
   categoryCard: {
     backgroundColor: 'white',
-    borderRadius: 16,
-    padding: 16,
-    shadowColor: '#000',
-    shadowOffset: { width: 0, height: 1 },
+    borderRadius: 999,
+    paddingHorizontal: 12,
+    paddingVertical: 10,
+    shadowColor: '#17363a',
+    shadowOffset: { width: 0, height: 3 },
     shadowOpacity: 0.05,
-    shadowRadius: 2,
+    shadowRadius: 8,
     elevation: 2,
     borderWidth: 1,
-    borderColor: 'rgba(20, 39, 45, 0.05)',
+    borderColor: 'rgba(20, 39, 45, 0.06)',
     alignItems: 'center',
+    flexDirection: 'row',
     gap: 8,
-    width: '30%',
+    alignSelf: 'flex-start',
+  },
+  categoryCardActive: {
+    backgroundColor: '#17363a',
+    borderColor: '#17363a',
   },
   categoryIcon: {
-    width: 48,
-    height: 48,
-    borderRadius: 24,
+    width: 32,
+    height: 32,
+    borderRadius: 999,
     alignItems: 'center',
     justifyContent: 'center',
+  },
+  categoryIconActive: {
+    borderWidth: 1,
+    borderColor: 'rgba(255,255,255,0.14)',
   },
   categoryLabel: {
     fontSize: 12,
     textAlign: 'center',
     color: '#14272d',
+    fontWeight: '600',
+  },
+  categoryLabelActive: {
+    color: '#ffffff',
   },
   supplementsSection: {
+    gap: 12,
+  },
+  supplementsGrid: {
+    flexDirection: 'row',
+    flexWrap: 'wrap',
+    justifyContent: 'space-between',
     gap: 12,
   },
   sectionHeaderText: {
@@ -544,64 +685,86 @@ const styles = StyleSheet.create({
   },
   supplementCard: {
     backgroundColor: 'white',
-    borderRadius: 16,
-    padding: 16,
-    shadowColor: '#000',
-    shadowOffset: { width: 0, height: 1 },
-    shadowOpacity: 0.05,
-    shadowRadius: 2,
-    elevation: 2,
+    borderRadius: 24,
+    width: '48%',
+    padding: 12,
+    shadowColor: '#17363a',
+    shadowOffset: { width: 0, height: 8 },
+    shadowOpacity: 0.08,
+    shadowRadius: 16,
+    elevation: 4,
     borderWidth: 1,
     borderColor: 'rgba(20, 39, 45, 0.05)',
-    flexDirection: 'row',
-    alignItems: 'center',
-    gap: 16,
+    gap: 10,
   },
-  supplementIcon: {
-    width: 48,
-    height: 48,
-    borderRadius: 24,
-    backgroundColor: '#e7ede7',
-    alignItems: 'center',
-    justifyContent: 'center',
+  supplementImageShell: {
+    width: '100%',
+    height: 128,
+    borderRadius: 18,
+    overflow: 'hidden',
+    backgroundColor: '#edf3f0',
+    borderWidth: 1,
+    borderColor: 'rgba(126, 166, 157, 0.18)',
+  },
+  supplementImage: {
+    width: '100%',
+    height: '100%',
   },
   supplementInfo: {
-    flex: 1,
+    minHeight: 146,
+    justifyContent: 'space-between',
+    gap: 8,
+  },
+  supplementHeaderRow: {
+    flexDirection: 'row',
+    alignItems: 'flex-start',
+    justifyContent: 'space-between',
+    gap: 8,
   },
   supplementName: {
     color: '#14272d',
-    fontSize: 16,
-    fontWeight: '600',
+    fontSize: 15,
+    fontWeight: '700',
+    lineHeight: 20,
   },
   supplementDescription: {
-    fontSize: 14,
-    color: '#7ea69d',
-    marginTop: 2,
+    fontSize: 12,
+    lineHeight: 18,
+    color: '#58786f',
   },
   tagsContainer: {
     flexDirection: 'row',
     flexWrap: 'wrap',
-    gap: 4,
-    marginTop: 8,
+    gap: 5,
   },
   categoryTag: {
-    backgroundColor: '#e7ede7',
-    paddingHorizontal: 8,
-    paddingVertical: 4,
-    borderRadius: 4,
+    alignSelf: 'flex-start',
+    backgroundColor: '#eef4f0',
+    paddingHorizontal: 10,
+    paddingVertical: 6,
+    borderRadius: 999,
   },
   categoryTagText: {
-    color: '#7ea69d',
-    fontSize: 12,
+    color: '#406b61',
+    fontSize: 11,
+    fontWeight: '700',
   },
   moleculeSmallTag: {
-    backgroundColor: 'rgba(179, 211, 210, 0.3)',
+    backgroundColor: 'rgba(179, 211, 210, 0.26)',
     paddingHorizontal: 8,
-    paddingVertical: 4,
-    borderRadius: 4,
+    paddingVertical: 5,
+    borderRadius: 999,
   },
   moleculeSmallText: {
     color: '#14272d',
-    fontSize: 12,
+    fontSize: 11,
+  },
+  supplementChevronWrap: {
+    width: 28,
+    height: 28,
+    borderRadius: 999,
+    backgroundColor: '#f4f8f5',
+    alignItems: 'center',
+    justifyContent: 'center',
   },
 });

@@ -10,12 +10,9 @@ import { WelcomeScreen } from "@/components/screens/welcome-screen";
 import { AuthProvider, useAuth } from "@/context/auth";
 import { type UserResponse } from "@/services/api";
 import { useEffect, useState } from "react";
-import { LogOut } from "lucide-react-native";
 import {
   ActivityIndicator,
   StyleSheet,
-  Text,
-  TouchableOpacity,
   View,
 } from "react-native";
 
@@ -50,10 +47,9 @@ export default function App() {
   );
 }
 function RootApp() {
-  const { token, user, loading, logout } = useAuth();
+  const { token, user, loading } = useAuth();
   const [currentScreen, setCurrentScreen] = useState<Screen>("welcome");
   const [activeTab, setActiveTab] = useState<Tab>("accueil");
-  const [isLoggingOut, setIsLoggingOut] = useState(false);
 
   useEffect(() => {
     if (loading) return;
@@ -82,21 +78,6 @@ function RootApp() {
   const handleTabChange = (tab: string) => {
     setActiveTab(tab as Tab);
   };
-
-  const performLogout = async () => {
-    if (isLoggingOut) return;
-
-    try {
-      setIsLoggingOut(true);
-      await logout();
-      setActiveTab("accueil");
-      setCurrentScreen("welcome");
-    } finally {
-      setIsLoggingOut(false);
-    }
-  };
-
-  const handleLogout = () => void performLogout();
 
   if (loading) {
     return (
@@ -140,29 +121,15 @@ function RootApp() {
     <View className="flex-1 bg-aja-cream" style={styles.containerWithNav}>
       <View className="flex-1" style={styles.content}>
         {activeTab === "accueil" && (
-          <DashboardScreen onAddGoal={() => setCurrentScreen("goals")} />
+          <DashboardScreen
+            onAddGoal={() => setCurrentScreen("goals")}
+            onOpenTracking={() => setActiveTab("suivi")}
+          />
         )}
         {activeTab === "recommandations" && <RecommendationsScreen />}
         {activeTab === "suivi" && <SuiviScreen />}
         {activeTab === "encyclopedie" && <EncyclopedieScreen />}
       </View>
-
-      <TouchableOpacity
-        className="absolute right-5 top-14 z-[80] h-9 flex-row items-center justify-center rounded-full border border-black/10 bg-white/95 px-3"
-        style={styles.logoutButton}
-        onPress={handleLogout}
-        disabled={isLoggingOut}
-        activeOpacity={0.85}
-      >
-        {isLoggingOut ? (
-          <ActivityIndicator size="small" color="#14272d" />
-        ) : (
-          <>
-            <LogOut size={16} color="#14272d" />
-            <Text style={styles.logoutText}>Deconnexion</Text>
-          </>
-        )}
-      </TouchableOpacity>
 
       <BottomNavigation
         activeTab={activeTab}
@@ -189,31 +156,5 @@ const styles = StyleSheet.create({
   },
   content: {
     flex: 1,
-  },
-  logoutButton: {
-    position: "absolute",
-    top: 56,
-    right: 20,
-    height: 36,
-    borderRadius: 18,
-    backgroundColor: "rgba(255, 255, 255, 0.96)",
-    borderWidth: 1,
-    borderColor: "rgba(20, 39, 45, 0.14)",
-    flexDirection: "row",
-    alignItems: "center",
-    justifyContent: "center",
-    gap: 6,
-    paddingHorizontal: 12,
-    zIndex: 80,
-    shadowColor: "#000",
-    shadowOffset: { width: 0, height: 1 },
-    shadowOpacity: 0.08,
-    shadowRadius: 2,
-    elevation: 3,
-  },
-  logoutText: {
-    color: "#14272d",
-    fontSize: 12,
-    fontWeight: "600",
   },
 });

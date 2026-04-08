@@ -1,5 +1,14 @@
-import { Check, ClipboardList, Flame, Target } from "lucide-react-native";
-import { useEffect, useMemo, useState } from "react";
+import { HeaderLogoutButton } from "@/components/header-logout-button";
+import { useAuth } from "@/context/auth";
+import {
+  getDashboardRandomQuestions,
+  getProgress,
+  type HomeQuestionResponse,
+  type ProgressResponse,
+  type UserResponse,
+} from "@/services/api";
+import { ArrowRight, Check, ClipboardList, Sparkles, Target } from "lucide-react-native";
+import { useEffect, useMemo, useRef, useState } from "react";
 import {
   ActivityIndicator,
   ScrollView,
@@ -7,196 +16,344 @@ import {
   Text,
   TouchableOpacity,
   View,
+  useWindowDimensions,
 } from "react-native";
-import {
-  getDashboard,
-  getProgress,
-  type DashboardResponse,
-  type ProgressResponse,
-} from "@/services/api";
 
 interface DashboardScreenProps {
   userName?: string;
   onAddGoal?: () => void;
+  onOpenTracking?: () => void;
 }
 
-export function DashboardScreen({ userName, onAddGoal }: DashboardScreenProps) {
+type QuestionCache = {
+  token: string | null;
+  questions: HomeQuestionResponse[];
+};
+
+let questionSessionCache: QuestionCache | null = null;
+
+function getDisplayName(user: ReturnType<typeof useAuth>["user"], fallback?: string) {
+  const profile = (user?.profile ?? {}) as UserResponse["profile"];
+  const profileRecord =
+    typeof profile === "object" && profile !== null ? (profile as Record<string, unknown>) : null;
+  const personal =
+    profileRecord && "personal" in profileRecord
+      ? (profileRecord.personal as Record<string, unknown> | null | undefined)
+      : null;
+  const personalRecord =
+    typeof personal === "object" && personal !== null ? personal : null;
+
+  const rawName =
+    personalRecord?.name ||
+    personalRecord?.first_name ||
+    profileRecord?.first_name ||
+    fallback ||
+    user?.email?.split("@")[0] ||
+    "vous";
+
+  return String(rawName).trim().split(" ")[0] || "vous";
+}
+
+export function DashboardScreen({
+  userName,
+  onAddGoal,
+  onOpenTracking,
+}: DashboardScreenProps) {
+  const { user, token } = useAuth();
+  const { width: windowWidth } = useWindowDimensions();
+
+  const carouselRef = useRef<ScrollView | null>(null);
+  const activeIndexRef = useRef(0);
+
   const [loading, setLoading] = useState(true);
-  const [error, setError] = useState<string | null>(null);
-  const [dashboardData, setDashboardData] = useState<DashboardResponse | null>(null);
-  const [progressData, setProgressData] = useState<ProgressResponse | null>(null);
+  const [questionsError, setQuestionsError] = useState<string | null>(null);
+  const [previewError, setPreviewError] = useState<string | null>(null);
+  const [questions, setQuestions] = useState<HomeQuestionResponse[]>([]);
+  const [trackingPreview, setTrackingPreview] = useState<ProgressResponse | null>(null);
+  const [activeIndex, setActiveIndex] = useState(0);
+
+  const slideWidth = Math.max(280, Math.min(windowWidth - 48, 560));
+  const slideGap = 12;
+  const slideInterval = slideWidth + slideGap;
+
+  useEffect(() => {
+    activeIndexRef.current = activeIndex;
+  }, [activeIndex]);
 
   useEffect(() => {
     let mounted = true;
 
     async function load() {
       setLoading(true);
-      setError(null);
-      try {
-        const [dashboard, progress] = await Promise.all([
-          getDashboard(),
-          getProgress(),
-        ]);
-        if (!mounted) return;
-        setDashboardData(dashboard);
-        setProgressData(progress);
-      } catch (e) {
-        console.error("Failed to load accueil:", e);
-        if (!mounted) return;
-        setError("Impossible de charger l accueil pour le moment.");
-      } finally {
-        if (mounted) setLoading(false);
+      setQuestionsError(null);
+      setPreviewError(null);
+
+      if (
+        questionSessionCache &&
+        questionSessionCache.token === token &&
+        questionSessionCache.questions.length > 0
+      ) {
+        setQuestions(questionSessionCache.questions);
       }
+
+      const [questionsResult, previewResult] = await Promise.allSettled([
+        questionSessionCache &&
+        questionSessionCache.token === token &&
+        questionSessionCache.questions.length > 0
+          ? Promise.resolve(questionSessionCache.questions)
+          : getDashboardRandomQuestions(4),
+        getProgress(),
+      ]);
+
+      if (!mounted) return;
+
+      if (questionsResult.status === "fulfilled") {
+        setQuestions(questionsResult.value);
+        questionSessionCache = {
+          token,
+          questions: questionsResult.value,
+        };
+      } else {
+        console.error("Failed to load home questions:", questionsResult.reason);
+        setQuestionsError("Impossible de charger les questions du moment.");
+      }
+
+      if (previewResult.status === "fulfilled") {
+        setTrackingPreview(previewResult.value);
+      } else {
+        console.error("Failed to load tracking preview:", previewResult.reason);
+        setPreviewError("Impossible de charger l apercu du suivi.");
+      }
+
+      setLoading(false);
     }
 
     load();
     return () => {
       mounted = false;
     };
-  }, []);
+  }, [token]);
 
-  const displayName = dashboardData?.user_name || userName || "User";
-  const progress = dashboardData?.today_progress ?? 0;
-  const taken = dashboardData?.supplements_taken ?? 0;
-  const total = dashboardData?.supplements_total ?? 0;
-  const weeklyData = dashboardData?.weekly_data ?? [];
-  const adherenceData = dashboardData?.adherence_data ?? [];
-  const expectedSupplements = progressData?.expected_supplements ?? [];
-  const takenTodayEvents = useMemo(
-    () => (progressData?.daily_intakes ?? []).filter((item) => item.taken).slice(-4).reverse(),
-    [progressData?.daily_intakes],
+  useEffect(() => {
+    if (questions.length <= 1) return;
+
+    const timer = setInterval(() => {
+      const nextIndex = (activeIndexRef.current + 1) % questions.length;
+      carouselRef.current?.scrollTo({
+        x: nextIndex * slideInterval,
+        animated: true,
+      });
+      setActiveIndex(nextIndex);
+    }, 5000);
+
+    return () => clearInterval(timer);
+  }, [questions.length, slideInterval]);
+
+  const displayName = useMemo(() => getDisplayName(user, userName), [user, userName]);
+  const previewRemaining = Math.max(
+    0,
+    (trackingPreview?.supplements_total ?? 0) - (trackingPreview?.supplements_taken ?? 0),
   );
+  const previewPlan = useMemo(
+    () => (trackingPreview?.expected_supplements ?? []).slice(0, 3),
+    [trackingPreview?.expected_supplements],
+  );
+
+  const handleCarouselEnd = (offsetX: number) => {
+    if (slideInterval <= 0) return;
+    const next = Math.max(0, Math.min(questions.length - 1, Math.round(offsetX / slideInterval)));
+    setActiveIndex(next);
+  };
 
   if (loading) {
     return (
-      <View className="flex-1 items-center justify-center bg-aja-cream" style={[styles.container, styles.centered]}>
+      <View
+        className="flex-1 items-center justify-center bg-aja-cream"
+        style={[styles.container, styles.centered]}
+      >
         <ActivityIndicator size="large" color="#7ea69d" />
       </View>
     );
   }
 
-  if (error) {
+  if (questionsError && !trackingPreview) {
     return (
-      <View className="flex-1 items-center justify-center bg-aja-cream" style={[styles.container, styles.centered]}>
+      <View
+        className="flex-1 items-center justify-center bg-aja-cream"
+        style={[styles.container, styles.centered]}
+      >
         <View style={styles.errorCard}>
-          <Text style={styles.errorText}>{error}</Text>
+          <Text style={styles.errorText}>{questionsError}</Text>
         </View>
       </View>
     );
   }
 
   return (
-    <ScrollView className="flex-1 bg-aja-cream" style={styles.container} contentContainerStyle={styles.contentContainer}>
-      <View style={styles.header}>
-        <Text style={styles.greeting}>Bonjour,</Text>
-        <Text style={styles.userName}>{displayName}</Text>
-        <Text style={styles.headerSubtitle}>Votre resume du jour</Text>
+    <ScrollView
+      className="flex-1 bg-aja-cream"
+      style={styles.container}
+      contentContainerStyle={styles.contentContainer}
+      showsVerticalScrollIndicator={false}
+    >
+      <View style={styles.hero}>
+        <View style={styles.heroTopRow}>
+          <View style={styles.heroBadge}>
+            <Sparkles size={14} color="#14272d" />
+            <Text style={styles.heroBadgeText}>Accueil</Text>
+          </View>
+          <HeaderLogoutButton />
+        </View>
+        <Text style={styles.heroTitle}>Bonjour, {displayName}</Text>
+        <Text style={styles.heroSubtitle}>
+          Une page courte et utile pour decouvrir, puis replonger dans votre suivi.
+        </Text>
       </View>
 
       <View style={styles.mainContent}>
-        <View style={styles.overviewCard}>
-          <View style={styles.overviewItem}>
-            <Target size={16} color="#b3d3d2" />
-            <Text style={styles.overviewValue}>{progress}%</Text>
-            <Text style={styles.overviewLabel}>Progression</Text>
-          </View>
-          <View style={styles.overviewDivider} />
-          <View style={styles.overviewItem}>
-            <Check size={16} color="#b3d3d2" />
-            <Text style={styles.overviewValue}>{taken}</Text>
-            <Text style={styles.overviewLabel}>Pris</Text>
-          </View>
-          <View style={styles.overviewDivider} />
-          <View style={styles.overviewItem}>
-            <ClipboardList size={16} color="#b3d3d2" />
-            <Text style={styles.overviewValue}>{total}</Text>
-            <Text style={styles.overviewLabel}>Prevus</Text>
-          </View>
+        <View style={styles.sectionHeader}>
+          <Text style={styles.sectionTitle}>Questions du moment</Text>
         </View>
 
-        <View style={styles.card}>
-          <Text style={styles.cardTitle}>Plan du jour</Text>
-          <Text style={styles.cardSubtitle}>
-            {taken}/{total} complement{total > 1 ? "s" : ""} valide{total > 1 ? "s" : ""}
-          </Text>
-
-          {expectedSupplements.length === 0 ? (
-            <Text style={styles.emptyText}>Aucun complement planifie pour aujourd hui.</Text>
-          ) : (
-            <View style={styles.list}>
-              {expectedSupplements.slice(0, 5).map((supplement) => (
+        {questions.length === 0 ? (
+          <View style={styles.emptyCard}>
+            <Text style={styles.emptyTitle}>Aucune carte disponible</Text>
+            <Text style={styles.emptyText}>
+              Les questions apparaitront ici des que la base encyclopedique aura des fiches pretes.
+            </Text>
+          </View>
+        ) : (
+          <View style={styles.carouselBlock}>
+            <ScrollView
+              ref={carouselRef}
+              horizontal
+              showsHorizontalScrollIndicator={false}
+              decelerationRate="fast"
+              snapToInterval={slideInterval}
+              snapToAlignment="start"
+              disableIntervalMomentum
+              contentContainerStyle={styles.carouselContent}
+              onMomentumScrollEnd={(event) =>
+                handleCarouselEnd(event.nativeEvent.contentOffset.x)
+              }
+            >
+              {questions.map((item, index) => (
                 <View
-                  key={supplement.id}
-                  style={[styles.planItem, supplement.taken && styles.planItemDone]}
+                  key={item.id}
+                  style={[
+                    styles.questionCard,
+                    { width: slideWidth },
+                    index < questions.length - 1 && { marginRight: slideGap },
+                  ]}
                 >
-                  <View style={[styles.planDot, supplement.taken && styles.planDotDone]} />
-                  <View style={{ flex: 1 }}>
-                    <Text style={styles.planName}>{supplement.name}</Text>
-                    {!!supplement.dosage && (
-                      <Text style={styles.planMeta}>{supplement.dosage}</Text>
-                    )}
+                  <View style={styles.questionMetaRow}>
+                    <Text style={styles.questionCategory}>{item.category}</Text>
+                    <Text style={styles.questionSupplement}>{item.supplement_name}</Text>
                   </View>
-                  <Text style={styles.planStatus}>
-                    {supplement.taken ? "Pris" : "En attente"}
-                  </Text>
+                  <Text style={styles.questionText}>{item.question}</Text>
+                  <Text style={styles.answerText}>{item.answer}</Text>
                 </View>
               ))}
-            </View>
-          )}
-        </View>
+            </ScrollView>
 
-        <View style={styles.card}>
-          <Text style={styles.cardTitle}>Cette semaine</Text>
-          <Text style={styles.cardSubtitle}>Regularite sur les 7 derniers jours</Text>
-
-          <View style={styles.weekRow}>
-            {weeklyData.map((day, index) => (
-              <View key={`${day.day}-${index}`} style={styles.weekItem}>
+            <View style={styles.paginationRow}>
+              {questions.map((item, index) => (
                 <View
-                  style={[styles.weekDot, day.completed ? styles.weekDotDone : styles.weekDotPending]}
+                  key={`dot-${item.id}`}
+                  style={[
+                    styles.paginationDot,
+                    index === activeIndex && styles.paginationDotActive,
+                  ]}
                 />
-                <Text style={styles.weekLabel}>{day.day}</Text>
-              </View>
-            ))}
-          </View>
-
-          <View style={styles.adherenceBar}>
-            {adherenceData.map((isDone, index) => (
-              <View
-                key={`adherence-${index}`}
-                style={[
-                  styles.adherenceSegment,
-                  isDone ? styles.adherenceSegmentDone : styles.adherenceSegmentPending,
-                ]}
-              />
-            ))}
-          </View>
-        </View>
-
-        <View style={styles.card}>
-          <View style={styles.cardHeaderRow}>
-            <Text style={styles.cardTitle}>Dernieres prises</Text>
-            <Flame size={16} color="#7ea69d" />
-          </View>
-
-          {takenTodayEvents.length === 0 ? (
-            <Text style={styles.emptyText}>Aucune prise enregistree aujourd hui.</Text>
-          ) : (
-            <View style={styles.list}>
-              {takenTodayEvents.map((item, index) => (
-                <View key={`${item.time}-${item.name}-${index}`} style={styles.timelineRow}>
-                  <Text style={styles.timelineTime}>{item.time}</Text>
-                  <Text numberOfLines={1} style={styles.timelineLabel}>
-                    {item.name}
-                  </Text>
-                </View>
               ))}
             </View>
-          )}
+          </View>
+        )}
+
+        <View style={styles.sectionHeader}>
+          <Text style={styles.sectionTitle}>Apercu du suivi</Text>
         </View>
 
-        <TouchableOpacity style={styles.addButton} onPress={onAddGoal} activeOpacity={0.9}>
-          <Text style={styles.addButtonText}>Mettre a jour mes objectifs</Text>
+        {previewError ? (
+          <View style={styles.emptyCard}>
+            <Text style={styles.emptyTitle}>Apercu indisponible</Text>
+            <Text style={styles.emptyText}>{previewError}</Text>
+          </View>
+        ) : trackingPreview ? (
+          <View style={styles.previewCard}>
+            <View style={styles.previewTopRow}>
+              <View>
+                <Text style={styles.previewBadge}>Aujourd hui</Text>
+                <Text style={styles.previewTitle}>Votre suivi en bref</Text>
+              </View>
+              <View style={styles.previewProgressPill}>
+                <Text style={styles.previewProgressText}>{trackingPreview.today_progress}%</Text>
+              </View>
+            </View>
+
+            <View style={styles.previewStatsRow}>
+              <View style={styles.previewStatItem}>
+                <Target size={15} color="#2f675c" />
+                <Text style={styles.previewStatValue}>{trackingPreview.today_progress}%</Text>
+                <Text style={styles.previewStatLabel}>Progression</Text>
+              </View>
+              <View style={styles.previewDivider} />
+              <View style={styles.previewStatItem}>
+                <Check size={15} color="#2f675c" />
+                <Text style={styles.previewStatValue}>{trackingPreview.supplements_taken ?? 0}</Text>
+                <Text style={styles.previewStatLabel}>Pris</Text>
+              </View>
+              <View style={styles.previewDivider} />
+              <View style={styles.previewStatItem}>
+                <ClipboardList size={15} color="#2f675c" />
+                <Text style={styles.previewStatValue}>{trackingPreview.supplements_total ?? 0}</Text>
+                <Text style={styles.previewStatLabel}>Prevus</Text>
+              </View>
+            </View>
+
+            <View style={styles.previewInnerCard}>
+              <Text style={styles.previewInnerTitle}>
+                {previewRemaining} complement{previewRemaining > 1 ? "s" : ""} restant
+                {previewRemaining > 1 ? "s" : ""}
+              </Text>
+              {previewPlan.length === 0 ? (
+                <Text style={styles.previewEmptyText}>Aucun complement planifie pour aujourd hui.</Text>
+              ) : (
+                <View style={styles.previewList}>
+                  {previewPlan.map((item) => (
+                    <View key={item.id} style={styles.previewListRow}>
+                      <View
+                        style={[
+                          styles.previewListDot,
+                          item.taken && styles.previewListDotDone,
+                        ]}
+                      />
+                      <Text style={styles.previewListText} numberOfLines={1}>
+                        {item.name}
+                      </Text>
+                    </View>
+                  ))}
+                </View>
+              )}
+            </View>
+
+            <TouchableOpacity
+              style={styles.trackingButton}
+              onPress={onOpenTracking}
+              activeOpacity={0.9}
+            >
+              <Text style={styles.trackingButtonText}>Ouvrir le suivi complet</Text>
+              <ArrowRight size={18} color="white" />
+            </TouchableOpacity>
+          </View>
+        ) : null}
+
+        <TouchableOpacity style={styles.goalsButton} onPress={onAddGoal} activeOpacity={0.9}>
+          <View>
+            <Text style={styles.goalsButtonLabel}>Objectifs</Text>
+            <Text style={styles.goalsButtonTitle}>Mettre a jour mon profil et mes objectifs</Text>
+          </View>
+          <ArrowRight size={18} color="#14272d" />
         </TouchableOpacity>
       </View>
     </ScrollView>
@@ -208,214 +365,305 @@ const styles = StyleSheet.create({
     flex: 1,
     backgroundColor: "#fef6e2",
   },
-  contentContainer: {
-    paddingBottom: 96,
-  },
   centered: {
     justifyContent: "center",
     alignItems: "center",
   },
-  header: {
+  contentContainer: {
+    paddingBottom: 104,
+  },
+  hero: {
     backgroundColor: "#14272d",
     paddingHorizontal: 24,
-    paddingVertical: 24,
-    borderBottomLeftRadius: 24,
-    borderBottomRightRadius: 24,
+    paddingTop: 30,
+    paddingBottom: 28,
+    borderBottomLeftRadius: 28,
+    borderBottomRightRadius: 28,
+    gap: 10,
   },
-  greeting: {
+  heroTopRow: {
+    flexDirection: "row",
+    alignItems: "center",
+    justifyContent: "space-between",
+    gap: 12,
+  },
+  heroBadge: {
+    alignSelf: "flex-start",
+    flexDirection: "row",
+    alignItems: "center",
+    gap: 6,
+    height: 30,
+    paddingHorizontal: 12,
+    borderRadius: 999,
+    backgroundColor: "#dfc485",
+  },
+  heroBadgeText: {
+    color: "#14272d",
+    fontSize: 12,
+    fontWeight: "800",
+  },
+  heroTitle: {
+    color: "white",
+    fontSize: 28,
+    fontWeight: "800",
+  },
+  heroSubtitle: {
     color: "#b3d3d2",
     fontSize: 14,
-  },
-  userName: {
-    color: "white",
-    fontSize: 24,
-    fontWeight: "700",
-    marginTop: 2,
-  },
-  headerSubtitle: {
-    color: "#b3d3d2",
-    fontSize: 13,
-    marginTop: 6,
+    lineHeight: 22,
+    maxWidth: 420,
   },
   mainContent: {
     paddingHorizontal: 24,
-    marginTop: -16,
-    gap: 16,
+    paddingTop: 22,
+    gap: 18,
   },
-  overviewCard: {
+  sectionHeader: {
+    gap: 4,
+  },
+  sectionTitle: {
+    color: "#14272d",
+    fontSize: 20,
+    fontWeight: "800",
+  },
+  sectionHint: {
+    color: "#7ea69d",
+    fontSize: 13,
+  },
+  carouselBlock: {
+    gap: 12,
+  },
+  carouselContent: {
+    paddingRight: 24,
+  },
+  questionCard: {
+    backgroundColor: "white",
+    borderRadius: 22,
+    padding: 18,
+    borderWidth: 1,
+    borderColor: "rgba(20, 39, 45, 0.07)",
+    shadowColor: "#000",
+    shadowOffset: { width: 0, height: 2 },
+    shadowOpacity: 0.05,
+    shadowRadius: 6,
+    elevation: 3,
+    gap: 12,
+  },
+  questionMetaRow: {
+    flexDirection: "row",
+    alignItems: "center",
+    justifyContent: "space-between",
+    gap: 12,
+  },
+  questionCategory: {
+    color: "#2f675c",
+    fontSize: 11,
+    fontWeight: "800",
+    textTransform: "uppercase",
+    letterSpacing: 0.8,
+  },
+  questionSupplement: {
+    color: "#7ea69d",
+    fontSize: 12,
+    fontWeight: "700",
+    flexShrink: 1,
+    textAlign: "right",
+  },
+  questionText: {
+    color: "#14272d",
+    fontSize: 18,
+    lineHeight: 25,
+    fontWeight: "800",
+  },
+  answerText: {
+    color: "rgba(20, 39, 45, 0.78)",
+    fontSize: 14,
+    lineHeight: 22,
+  },
+  paginationRow: {
+    flexDirection: "row",
+    alignItems: "center",
+    justifyContent: "center",
+    gap: 8,
+  },
+  paginationDot: {
+    width: 8,
+    height: 8,
+    borderRadius: 999,
+    backgroundColor: "rgba(126, 166, 157, 0.25)",
+  },
+  paginationDotActive: {
+    width: 22,
+    backgroundColor: "#2f675c",
+  },
+  previewCard: {
     backgroundColor: "#14272d",
-    borderRadius: 16,
+    borderRadius: 24,
+    padding: 18,
+    gap: 16,
+    shadowColor: "#000",
+    shadowOffset: { width: 0, height: 2 },
+    shadowOpacity: 0.08,
+    shadowRadius: 8,
+    elevation: 4,
+  },
+  previewTopRow: {
+    flexDirection: "row",
+    alignItems: "flex-start",
+    justifyContent: "space-between",
+    gap: 12,
+  },
+  previewBadge: {
+    color: "#dfc485",
+    fontSize: 11,
+    fontWeight: "800",
+    textTransform: "uppercase",
+    letterSpacing: 0.8,
+    marginBottom: 6,
+  },
+  previewTitle: {
+    color: "white",
+    fontSize: 20,
+    fontWeight: "800",
+  },
+  previewProgressPill: {
+    minWidth: 72,
+    height: 40,
+    borderRadius: 20,
+    paddingHorizontal: 14,
+    backgroundColor: "rgba(255, 255, 255, 0.12)",
+    alignItems: "center",
+    justifyContent: "center",
+  },
+  previewProgressText: {
+    color: "#dfc485",
+    fontSize: 16,
+    fontWeight: "800",
+  },
+  previewStatsRow: {
+    backgroundColor: "rgba(255, 255, 255, 0.08)",
+    borderRadius: 18,
     paddingVertical: 14,
     paddingHorizontal: 10,
     flexDirection: "row",
     alignItems: "center",
   },
-  overviewItem: {
+  previewStatItem: {
     flex: 1,
     alignItems: "center",
-    gap: 3,
+    gap: 4,
   },
-  overviewValue: {
+  previewDivider: {
+    width: 1,
+    height: 32,
+    backgroundColor: "rgba(179, 211, 210, 0.18)",
+  },
+  previewStatValue: {
     color: "white",
-    fontSize: 20,
+    fontSize: 18,
+    fontWeight: "800",
+  },
+  previewStatLabel: {
+    color: "#b3d3d2",
+    fontSize: 11,
     fontWeight: "700",
   },
-  overviewLabel: {
-    color: "#b3d3d2",
-    fontSize: 12,
-  },
-  overviewDivider: {
-    width: 1,
-    height: 28,
-    backgroundColor: "rgba(179, 211, 210, 0.35)",
-  },
-  card: {
-    backgroundColor: "white",
-    borderRadius: 16,
-    padding: 18,
-    borderWidth: 1,
-    borderColor: "rgba(20, 39, 45, 0.06)",
-    shadowColor: "#000",
-    shadowOffset: { width: 0, height: 1 },
-    shadowOpacity: 0.05,
-    shadowRadius: 2,
-    elevation: 2,
+  previewInnerCard: {
+    backgroundColor: "rgba(255, 255, 255, 0.97)",
+    borderRadius: 18,
+    padding: 16,
     gap: 12,
   },
-  cardHeaderRow: {
+  previewInnerTitle: {
+    color: "#14272d",
+    fontSize: 15,
+    fontWeight: "800",
+  },
+  previewList: {
+    gap: 10,
+  },
+  previewListRow: {
+    flexDirection: "row",
+    alignItems: "center",
+    gap: 10,
+  },
+  previewListDot: {
+    width: 10,
+    height: 10,
+    borderRadius: 999,
+    backgroundColor: "#dfc485",
+  },
+  previewListDotDone: {
+    backgroundColor: "#2f675c",
+  },
+  previewListText: {
+    flex: 1,
+    color: "#14272d",
+    fontSize: 14,
+    fontWeight: "600",
+  },
+  previewEmptyText: {
+    color: "#7ea69d",
+    fontSize: 14,
+    lineHeight: 22,
+  },
+  trackingButton: {
+    height: 52,
+    borderRadius: 16,
+    backgroundColor: "#2f675c",
+    flexDirection: "row",
+    alignItems: "center",
+    justifyContent: "center",
+    gap: 10,
+  },
+  trackingButtonText: {
+    color: "white",
+    fontSize: 15,
+    fontWeight: "800",
+  },
+  goalsButton: {
+    marginTop: 6,
+    backgroundColor: "rgba(223, 196, 133, 0.28)",
+    borderRadius: 20,
+    paddingHorizontal: 18,
+    paddingVertical: 16,
+    borderWidth: 1,
+    borderColor: "rgba(190, 162, 98, 0.34)",
     flexDirection: "row",
     alignItems: "center",
     justifyContent: "space-between",
+    gap: 14,
   },
-  cardTitle: {
+  goalsButtonLabel: {
+    color: "#7ea69d",
+    fontSize: 11,
+    fontWeight: "800",
+    textTransform: "uppercase",
+    letterSpacing: 0.8,
+    marginBottom: 4,
+  },
+  goalsButtonTitle: {
     color: "#14272d",
     fontSize: 15,
     fontWeight: "700",
   },
-  cardSubtitle: {
-    color: "#7ea69d",
-    fontSize: 12,
-    marginTop: -6,
+  emptyCard: {
+    backgroundColor: "white",
+    borderRadius: 20,
+    padding: 20,
+    borderWidth: 1,
+    borderColor: "rgba(20, 39, 45, 0.06)",
+    gap: 8,
+  },
+  emptyTitle: {
+    color: "#14272d",
+    fontSize: 16,
+    fontWeight: "700",
   },
   emptyText: {
     color: "#7ea69d",
-    fontSize: 13,
-  },
-  list: {
-    gap: 10,
-  },
-  planItem: {
-    flexDirection: "row",
-    alignItems: "center",
-    gap: 10,
-    borderWidth: 1,
-    borderColor: "rgba(20, 39, 45, 0.08)",
-    borderRadius: 12,
-    paddingVertical: 10,
-    paddingHorizontal: 12,
-    backgroundColor: "rgba(231, 237, 231, 0.25)",
-  },
-  planItemDone: {
-    backgroundColor: "rgba(179, 211, 210, 0.2)",
-    borderColor: "rgba(126, 166, 157, 0.35)",
-  },
-  planDot: {
-    width: 10,
-    height: 10,
-    borderRadius: 5,
-    backgroundColor: "#dfc485",
-  },
-  planDotDone: {
-    backgroundColor: "#2f675c",
-  },
-  planName: {
-    color: "#14272d",
     fontSize: 14,
-    fontWeight: "600",
-  },
-  planMeta: {
-    color: "#7ea69d",
-    fontSize: 12,
-    marginTop: 2,
-  },
-  planStatus: {
-    color: "#7ea69d",
-    fontSize: 12,
-    fontWeight: "700",
-  },
-  weekRow: {
-    flexDirection: "row",
-    justifyContent: "space-between",
-    alignItems: "center",
-  },
-  weekItem: {
-    alignItems: "center",
-    gap: 8,
-    flex: 1,
-  },
-  weekDot: {
-    width: 14,
-    height: 14,
-    borderRadius: 7,
-  },
-  weekDotDone: {
-    backgroundColor: "#2f675c",
-  },
-  weekDotPending: {
-    backgroundColor: "rgba(179, 211, 210, 0.45)",
-  },
-  weekLabel: {
-    color: "#7ea69d",
-    fontSize: 12,
-    fontWeight: "700",
-  },
-  adherenceBar: {
-    marginTop: 2,
-    flexDirection: "row",
-    gap: 4,
-  },
-  adherenceSegment: {
-    flex: 1,
-    height: 8,
-    borderRadius: 999,
-  },
-  adherenceSegmentDone: {
-    backgroundColor: "#7ea69d",
-  },
-  adherenceSegmentPending: {
-    backgroundColor: "rgba(126, 166, 157, 0.2)",
-  },
-  timelineRow: {
-    flexDirection: "row",
-    alignItems: "center",
-    gap: 10,
-    paddingVertical: 2,
-  },
-  timelineTime: {
-    color: "#7ea69d",
-    width: 46,
-    fontSize: 12,
-    fontWeight: "700",
-  },
-  timelineLabel: {
-    flex: 1,
-    color: "#14272d",
-    fontSize: 13,
-    fontWeight: "600",
-  },
-  addButton: {
-    height: 48,
-    borderRadius: 16,
-    backgroundColor: "#2f675c",
-    alignItems: "center",
-    justifyContent: "center",
-    borderWidth: 1,
-    borderColor: "rgba(20, 39, 45, 0.08)",
-  },
-  addButtonText: {
-    color: "white",
-    fontSize: 14,
-    fontWeight: "700",
+    lineHeight: 22,
   },
   errorCard: {
     marginHorizontal: 24,

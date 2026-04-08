@@ -3,7 +3,6 @@ import {
   AlertCircle,
   Apple,
   ArrowLeft,
-  ArrowRight,
   Baby,
   Brain,
   CalendarDays,
@@ -29,11 +28,13 @@ import {
   type ReactNode,
   useEffect,
   useMemo,
+  useRef,
   useState,
 } from "react";
 import {
   ActivityIndicator,
   Alert,
+  Animated,
   Image,
   ScrollView,
   StyleSheet,
@@ -86,6 +87,9 @@ type FormDataState = {
   allergies: string[];
 };
 
+type HeightDisplayUnit = "cm" | "ft";
+type WeightDisplayUnit = "kg" | "lb";
+
 type ValidationResult =
   | { valid: true }
   | { valid: false; title: string; message: string };
@@ -123,72 +127,72 @@ function normalizeStoredGoals(values: string[], options: GoalOptionResponse[]) {
 }
 
 const GOAL_FALLBACK_OPTIONS: Option[] = [
-  { value: "mood_depression_support", label: "AmÃƒÆ’Ã‚Â©liorer mon humeur" },
-  { value: "stress_anxiety_support", label: "GÃƒÆ’Ã‚Â©rer le stress et l'anxiÃƒÆ’Ã‚Â©tÃƒÆ’Ã‚Â©" },
-  { value: "sleep_support", label: "AmÃƒÆ’Ã‚Â©liorer mon sommeil" },
+  { value: "mood_depression_support", label: "Ameliorer mon humeur" },
+  { value: "stress_anxiety_support", label: "Gerer le stress et l'anxiete" },
+  { value: "sleep_support", label: "Ameliorer mon sommeil" },
   { value: "weight_loss", label: "Perdre du poids" },
-  { value: "appetite_control", label: "ContrÃƒÆ’Ã‚Â´ler mon appÃƒÆ’Ã‚Â©tit" },
-  { value: "energy_fatigue", label: "Augmenter mon ÃƒÆ’Ã‚Â©nergie" },
-  { value: "focus_cognition", label: "AmÃƒÆ’Ã‚Â©liorer ma concentration et mÃƒÆ’Ã‚Â©moire" },
-  { value: "digestion_gut", label: "AmÃƒÆ’Ã‚Â©liorer ma digestion" },
-  { value: "immune_support", label: "Renforcer mon immunitÃƒÆ’Ã‚Â©" },
+  { value: "appetite_control", label: "Controler mon appetit" },
+  { value: "energy_fatigue", label: "Augmenter mon energie" },
+  { value: "focus_cognition", label: "Ameliorer ma concentration et memoire" },
+  { value: "digestion_gut", label: "Ameliorer ma digestion" },
+  { value: "immune_support", label: "Renforcer mon immunite" },
   { value: "muscle_gain_strength", label: "Gagner en muscle et force" },
-  { value: "pain_inflammation", label: "RÃƒÆ’Ã‚Â©duire douleurs et inflammations" },
-  { value: "migraine_headache", label: "PrÃƒÆ’Ã‚Â©venir migraines et maux de tÃƒÆ’Ã‚Âªte" },
+  { value: "pain_inflammation", label: "Reduire douleurs et inflammations" },
+  { value: "migraine_headache", label: "Prevenir migraines et maux de tete" },
 ];
 
 // Organized by category for better UX
 const MEDICATION_CONDITIONS: Option[] = [
   {
     value: "taking_serotonergic_meds",
-    label: "AntidÃƒÆ’Ã‚Â©presseurs (ISRS, IRSN, etc.)",
+    label: "Antidepresseurs (ISRS, IRSN, etc.)",
   },
   {
     value: "taking_anticoagulants",
     label: "Anticoagulants (fluidifiants sanguins)",
   },
-  { value: "taking_antidiabetic_meds", label: "MÃƒÆ’Ã‚Â©dicaments pour le diabÃƒÆ’Ã‚Â¨te" },
-  { value: "taking_antihypertensives", label: "MÃƒÆ’Ã‚Â©dicaments pour la tension" },
+  { value: "taking_antidiabetic_meds", label: "Medicaments pour le diabete" },
+  { value: "taking_antihypertensives", label: "Medicaments pour la tension" },
 ];
 
 const HEALTH_CONDITIONS: Option[] = [
   { value: "gi_disorder", label: "Troubles digestifs chroniques" },
-  { value: "liver_disease", label: "ProblÃƒÆ’Ã‚Â¨me hÃƒÆ’Ã‚Â©patique (foie)" },
-  { value: "kidney_disease", label: "ProblÃƒÆ’Ã‚Â¨me rÃƒÆ’Ã‚Â©nal (reins)" },
-  { value: "thyroid_disorder", label: "Trouble de la thyroÃƒÆ’Ã‚Â¯de" },
-  { value: "seizure_disorder", label: "Historique d'ÃƒÆ’Ã‚Â©pilepsie" },
+  { value: "liver_disease", label: "Probleme hepatique (foie)" },
+  { value: "kidney_disease", label: "Probleme renal (reins)" },
+  { value: "thyroid_disorder", label: "Trouble de la thyroide" },
+  { value: "seizure_disorder", label: "Historique d'epilepsie" },
   { value: "autoimmune_condition", label: "Maladie auto-immune" },
   { value: "allergy_prone", label: "Terrain allergique" },
 ];
 
 const DISEASES: Option[] = [
-  { value: "depression", label: "DÃƒÆ’Ã‚Â©pression" },
+  { value: "depression", label: "Depression" },
   { value: "anxiety_disorder", label: "Trouble anxieux" },
   { value: "panic_disorder", label: "Trouble panique" },
-  { value: "obesity", label: "ObÃƒÆ’Ã‚Â©sitÃƒÆ’Ã‚Â©" },
-  { value: "type2_diabetes", label: "DiabÃƒÆ’Ã‚Â¨te type 2" },
+  { value: "obesity", label: "Obesite" },
+  { value: "type2_diabetes", label: "Diabete type 2" },
   { value: "migraine", label: "Migraine" },
   { value: "fibromyalgia", label: "Fibromyalgie" },
   { value: "parkinsons_disease", label: "Maladie de Parkinson" },
   { value: "insomnia", label: "Insomnie" },
   { value: "ibs", label: "Syndrome intestin irritable (IBS)" },
   { value: "hypertension", label: "Hypertension" },
-  { value: "high_cholesterol", label: "CholestÃƒÆ’Ã‚Â©rol ÃƒÆ’Ã‚Â©levÃƒÆ’Ã‚Â©" },
+  { value: "high_cholesterol", label: "Cholesterol eleve" },
 ];
 
 const ALLERGIES: Option[] = [
   { value: "none", label: "Aucune allergie" },
   { value: "peanuts", label: "Arachides" },
-  { value: "tree_nuts", label: "Fruits ÃƒÆ’Ã‚Â  coque (noix, amandes, etc.)" },
+  { value: "tree_nuts", label: "Fruits a coque (noix, amandes, etc.)" },
   { value: "soy", label: "Soja" },
   { value: "gluten", label: "Gluten" },
   { value: "lactose", label: "Lactose" },
-  { value: "shellfish", label: "Fruits de mer / crustacÃƒÆ’Ã‚Â©s" },
+  { value: "shellfish", label: "Fruits de mer / crustaces" },
   { value: "fish", label: "Poisson" },
-  { value: "egg", label: "Ãƒâ€¦Ã¢â‚¬â„¢ufs" },
-  { value: "sesame", label: "SÃƒÆ’Ã‚Â©same" },
+  { value: "egg", label: "Oeufs" },
+  { value: "sesame", label: "Sesame" },
   { value: "pollen", label: "Pollen" },
-  { value: "medication", label: "Allergie ÃƒÆ’Ã‚Â  certains mÃƒÆ’Ã‚Â©dicaments" },
+  { value: "medication", label: "Allergie a certains medicaments" },
   { value: "other", label: "Autre allergie" },
 ];
 
@@ -229,6 +233,10 @@ const BIRTH_MONTHS = [
   "Dec",
 ];
 const MIN_BIRTH_YEAR = 1920;
+const HEIGHT_CM_VALUES = Array.from({ length: 101 }, (_, index) => 120 + index);
+const HEIGHT_IN_VALUES = Array.from({ length: 56 }, (_, index) => 48 + index);
+const WEIGHT_KG_VALUES = Array.from({ length: 121 }, (_, index) => 30 + index);
+const WEIGHT_LB_VALUES = Array.from({ length: 243 }, (_, index) => 66 + index);
 
 const MODERN_ACTIVITY_LEVELS: Option[] = [
   {
@@ -373,7 +381,139 @@ function formatBirthdateDisplay(value: string) {
   return `${padDatePart(parts.day)}/${padDatePart(parts.month)}/${parts.year}`;
 }
 
-function getHeroCopy(step: number, isGoalsOnly: boolean, sex: string) {
+function parseOptionalNumber(value: string) {
+  const normalized = value.replace(",", ".").trim();
+  if (!normalized.length) return null;
+  const parsed = Number(normalized);
+  return Number.isFinite(parsed) ? parsed : null;
+}
+
+function hasTextValue(value: string) {
+  return value.trim().length > 0;
+}
+
+function hasPositiveNumberValue(value: string) {
+  const parsed = parseOptionalNumber(value);
+  return parsed !== null && parsed > 0;
+}
+
+function formatFeetAndInches(totalInches: number) {
+  const feet = Math.floor(totalInches / 12);
+  const inches = totalInches % 12;
+  return `${feet}'${padDatePart(inches)}"`;
+}
+
+function getHeightDisplayValue(height: string, unit: HeightDisplayUnit) {
+  const parsed = parseOptionalNumber(height);
+  if (parsed === null) return null;
+
+  if (unit === "cm") {
+    return Math.round(parsed);
+  }
+
+  return Math.round(parsed / 2.54);
+}
+
+function getWeightDisplayValue(weight: string, unit: WeightDisplayUnit) {
+  const parsed = parseOptionalNumber(weight);
+  if (parsed === null) return null;
+
+  if (unit === "kg") {
+    return Math.round(parsed);
+  }
+
+  return Math.round(parsed * 2.20462);
+}
+
+function formatHeightDisplay(value: number | null, unit: HeightDisplayUnit) {
+  if (value === null) {
+    return "--";
+  }
+
+  return unit === "cm" ? `${value}` : formatFeetAndInches(value);
+}
+
+function formatHeightHelper(value: number | null, unit: HeightDisplayUnit) {
+  if (value === null) {
+    return "Selectionnez votre taille";
+  }
+
+  if (unit === "cm") {
+    return `${(value / 100).toFixed(2)} m`;
+  }
+
+  const centimeters = Math.round(value * 2.54);
+  return `${centimeters} cm`;
+}
+
+function formatWeightDisplay(value: number | null, unit: WeightDisplayUnit) {
+  if (value === null) {
+    return "--";
+  }
+
+  return `${value}`;
+}
+
+function formatWeightHelper(value: number | null, unit: WeightDisplayUnit) {
+  if (value === null) {
+    return "Selectionnez votre poids";
+  }
+
+  if (unit === "kg") {
+    return `${Math.round(value * 2.20462)} lb`;
+  }
+
+  return `${Math.round(value / 2.20462)} kg`;
+}
+
+function getStepCompletion({
+  isGoalsOnly,
+  step,
+  formData,
+}: {
+  isGoalsOnly: boolean;
+  step: number;
+  formData: FormDataState;
+}) {
+  if (isGoalsOnly) {
+    return formData.goals.length > 0 ? 1 : 0;
+  }
+
+  switch (step) {
+    case 1: {
+      const checks = [
+        hasTextValue(formData.firstname),
+        hasTextValue(formData.lastname),
+        hasTextValue(formData.sex),
+        Boolean(deriveAgeRangeFromBirthdate(formData.birthdate)),
+        hasPositiveNumberValue(formData.height),
+        hasPositiveNumberValue(formData.weight),
+      ];
+      return checks.filter(Boolean).length / checks.length;
+    }
+    case 2: {
+      const checks = [
+        formData.pregnancy !== null,
+        formData.breastfeeding !== null,
+      ];
+      return checks.filter(Boolean).length / checks.length;
+    }
+    case 3:
+      return hasTextValue(formData.activityLevel) ? 1 : 0;
+    case 4:
+      return formData.goals.length > 0 ? 1 : 0;
+    case 5:
+      return formData.conditions.length > 0 ? 1 : 0;
+    case 6:
+      return formData.diseases.length > 0 || !formData.allergies.includes("none")
+        ? 1
+        : 0;
+    default:
+      return 0;
+  }
+}
+
+function getHeroCopy(step: number, isGoalsOnly: boolean) {
   if (isGoalsOnly) {
     return {
       eyebrow: "Objectifs",
@@ -388,13 +528,13 @@ function getHeroCopy(step: number, isGoalsOnly: boolean, sex: string) {
       return {
         eyebrow: "Bienvenue",
         title: "Construisons votre profil",
-        subtitle: "Quelques reperes pour adapter l'experience sans vous surcharger.",
+        subtitle: "Quelques informations essentielles pour lancer une experience claire, personnelle et rassurante.",
       };
     case 2:
       return {
         eyebrow: "Securite",
         title: "Un contexte plus precis",
-        subtitle: "Ces informations aident a eviter certaines recommandations inadaptÃƒÆ’Ã‚Â©es.",
+        subtitle: "Ces informations aident a eviter certaines recommandations inappropriees.",
       };
     case 3:
       return {
@@ -417,7 +557,7 @@ function getHeroCopy(step: number, isGoalsOnly: boolean, sex: string) {
     default:
       return {
         eyebrow: "Votre suivi",
-        title: sex === "Femme" ? "Derniers ajustements" : "Derniers ajustements",
+        title: "Derniers ajustements",
         subtitle: "Encore une etape avant de profiter de votre espace personnalise.",
       };
   }
@@ -453,7 +593,7 @@ function validateOnboardingStep({
   switch (step) {
     case 1:
       if (!hasText(formData.firstname)) {
-        return { valid: false, title: "PrÃƒÆ’Ã‚Â©nom requis", message: "Veuillez renseigner votre prÃƒÆ’Ã‚Â©nom." };
+        return { valid: false, title: "Prenom requis", message: "Veuillez renseigner votre prenom." };
       }
       if (!hasText(formData.lastname)) {
         return { valid: false, title: "Nom requis", message: "Veuillez renseigner votre nom." };
@@ -484,7 +624,7 @@ function validateOnboardingStep({
       return { valid: true };
     case 2:
       if (formData.pregnancy === null) {
-        return { valid: false, title: "Reponse requise", message: "Veuillez indiquer si vous ÃƒÆ’Ã‚Âªtes enceinte." };
+        return { valid: false, title: "Reponse requise", message: "Veuillez indiquer si vous etes enceinte." };
       }
       if (formData.breastfeeding === null) {
         return { valid: false, title: "Reponse requise", message: "Veuillez indiquer si vous allaitez." };
@@ -760,6 +900,138 @@ function BirthdateWheelPicker({ value, onChange }: BirthdateWheelPickerProps) {
   );
 }
 
+type MetricRulerCardProps = {
+  label: string;
+  required?: boolean;
+  icon: CardIcon;
+  accent?: string;
+  unitOptions: { key: string; label: string }[];
+  activeUnit: string;
+  onChangeUnit: (nextUnit: string) => void;
+  selectedValue: number | null;
+  displayValue: string;
+  helperValue: string;
+  values: number[];
+  onSelectValue: (value: number) => void;
+  getTickLabel: (value: number) => string;
+};
+
+function MetricRulerCard({
+  label,
+  required,
+  icon: Icon,
+  accent = "#7ea69d",
+  unitOptions,
+  activeUnit,
+  onChangeUnit,
+  selectedValue,
+  displayValue,
+  helperValue,
+  values,
+  onSelectValue,
+  getTickLabel,
+}: MetricRulerCardProps) {
+  return (
+    <View style={styles.metricPickerCard}>
+      <View style={styles.metricPickerHeader}>
+        <View style={styles.metricPickerTitleRow}>
+          <View style={styles.metricPickerIconWrap}>
+            <Icon size={18} color={accent} />
+          </View>
+          <Text style={styles.metricPickerLabel}>{label}</Text>
+        </View>
+        {required ? (
+          <View style={styles.requiredTag}>
+            <Text style={styles.requiredTagText}>Requis</Text>
+          </View>
+        ) : null}
+      </View>
+
+      <View style={styles.metricUnitSwitch}>
+        {unitOptions.map((option) => {
+          const active = option.key === activeUnit;
+          return (
+            <TouchableOpacity
+              key={option.key}
+              onPress={() => onChangeUnit(option.key)}
+              activeOpacity={0.88}
+              style={[
+                styles.metricUnitButton,
+                active && { backgroundColor: accent },
+              ]}
+            >
+              <Text
+                style={[
+                  styles.metricUnitButtonText,
+                  active && styles.metricUnitButtonTextActive,
+                ]}
+              >
+                {option.label}
+              </Text>
+            </TouchableOpacity>
+          );
+        })}
+      </View>
+
+      <View style={styles.metricValueWrap}>
+        <Text style={styles.metricValueText}>{displayValue}</Text>
+        <Text style={styles.metricValueHelper}>{helperValue}</Text>
+      </View>
+
+      <View style={styles.metricPointerWrap}>
+        <View style={[styles.metricPointerLine, { backgroundColor: `${accent}66` }]} />
+        <View style={[styles.metricPointerDot, { backgroundColor: accent }]} />
+      </View>
+
+      <ScrollView
+        horizontal
+        nestedScrollEnabled
+        showsHorizontalScrollIndicator={false}
+        contentContainerStyle={styles.metricRulerContent}
+      >
+        {values.map((value, index) => {
+          const selected = value === selectedValue;
+          const tickLabel = getTickLabel(value);
+          const isMajor = tickLabel.length > 0;
+
+          return (
+            <TouchableOpacity
+              key={`${label}-${value}`}
+              onPress={() => onSelectValue(value)}
+              activeOpacity={0.88}
+              style={styles.metricTickButton}
+            >
+              <View
+                style={[
+                  styles.metricTick,
+                  isMajor ? styles.metricTickMajor : styles.metricTickMinor,
+                  selected && { backgroundColor: accent },
+                ]}
+              />
+              <Text
+                style={[
+                  styles.metricTickLabel,
+                  selected && { color: "#14272d", fontWeight: "800" },
+                ]}
+              >
+                {tickLabel}
+              </Text>
+              {selected ? (
+                <View
+                  style={[
+                    styles.metricSelectedTriangle,
+                    { borderTopColor: accent },
+                  ]}
+                />
+              ) : null}
+            </TouchableOpacity>
+          );
+        })}
+      </ScrollView>
+    </View>
+  );
+}
+
 type ChoiceCardProps = {
   icon: CardIcon;
   title: string;
@@ -976,6 +1248,8 @@ export function OnboardingScreen({
   const [saving, setSaving] = useState(false);
   const [focusedField, setFocusedField] = useState<string | null>(null);
   const [birthdatePickerOpen, setBirthdatePickerOpen] = useState(false);
+  const [heightUnit, setHeightUnit] = useState<HeightDisplayUnit>("cm");
+  const [weightUnit, setWeightUnit] = useState<WeightDisplayUnit>("kg");
 
   const [step, setStep] = useState(isGoalsOnly ? 4 : 1);
   const [formData, setFormData] = useState<FormDataState>({
@@ -1034,12 +1308,20 @@ export function OnboardingScreen({
     return step;
   }
 
-  const totalSteps = isGoalsOnly ? 4 : formData.sex === "Femme" ? 6 : 5;
+  const totalSteps = isGoalsOnly ? 1 : formData.sex === "Femme" ? 6 : 5;
   const displayStep = getDisplayStep();
-  const progress = isGoalsOnly ? 100 : (displayStep / totalSteps) * 100;
+  const currentStepCompletion = useMemo(
+    () => getStepCompletion({ isGoalsOnly, step, formData }),
+    [formData, isGoalsOnly, step],
+  );
+  const progress =
+    totalSteps > 0
+      ? (((displayStep - 1) + currentStepCompletion) / totalSteps) * 100
+      : 0;
+  const animatedProgress = useRef(new Animated.Value(progress)).current;
   const hero = useMemo(
-    () => getHeroCopy(step, isGoalsOnly, formData.sex),
-    [formData.sex, isGoalsOnly, step],
+    () => getHeroCopy(step, isGoalsOnly),
+    [isGoalsOnly, step],
   );
   const derivedAgeRange = useMemo(
     () => deriveAgeRangeFromBirthdate(formData.birthdate),
@@ -1049,6 +1331,14 @@ export function OnboardingScreen({
     () => getAgeFromBirthdate(formData.birthdate),
     [formData.birthdate],
   );
+  const displayedHeightValue = useMemo(
+    () => getHeightDisplayValue(formData.height, heightUnit),
+    [formData.height, heightUnit],
+  );
+  const displayedWeightValue = useMemo(
+    () => getWeightDisplayValue(formData.weight, weightUnit),
+    [formData.weight, weightUnit],
+  );
 
   const setBirthdateValue = (nextBirthdate: string) => {
     const nextAgeRange = deriveAgeRangeFromBirthdate(nextBirthdate) ?? "";
@@ -1057,6 +1347,17 @@ export function OnboardingScreen({
       birthdate: nextBirthdate,
       ageRange: nextAgeRange,
     }));
+  };
+
+  const setHeightFromDisplay = (value: number) => {
+    const heightInCm = heightUnit === "cm" ? value : Math.round(value * 2.54);
+    setFormData((prev) => ({ ...prev, height: String(heightInCm) }));
+  };
+
+  const setWeightFromDisplay = (value: number) => {
+    const weightInKg =
+      weightUnit === "kg" ? value : Math.round(value / 2.20462);
+    setFormData((prev) => ({ ...prev, weight: String(weightInKg) }));
   };
 
   const sexToApi = (sex: string) => {
@@ -1081,6 +1382,24 @@ export function OnboardingScreen({
         return null;
     }
   };
+  const ctaLabel = isGoalsOnly
+    ? "Enregistrer mes objectifs"
+    : step === totalSteps
+      ? "Valider et acceder a mon espace"
+      : "Continuer";
+
+  useEffect(() => {
+    Animated.timing(animatedProgress, {
+      toValue: progress,
+      duration: 320,
+      useNativeDriver: false,
+    }).start();
+  }, [animatedProgress, progress]);
+
+  const animatedProgressWidth = animatedProgress.interpolate({
+    inputRange: [0, 100],
+    outputRange: ["0%", "100%"],
+  });
 
   const handleSubmitProfile = async () => {
     const medicationValues = new Set(MEDICATION_CONDITIONS.map((x) => x.value));
@@ -1255,12 +1574,6 @@ export function OnboardingScreen({
           <ArrowLeft size={22} color="#14272d" />
         </TouchableOpacity>
 
-        <View style={styles.stepBadge}>
-          <Text style={styles.stepBadgeText}>
-            {isGoalsOnly ? "Objectifs" : `Etape ${displayStep} / ${totalSteps}`}
-          </Text>
-        </View>
-
         <View style={styles.brandChip}>
           <Image
             source={require("@/assets/images/logo aja 1.png")}
@@ -1269,23 +1582,66 @@ export function OnboardingScreen({
         </View>
       </View>
 
-      <View style={[styles.compactHeaderCard, isWide && styles.compactHeaderCardWide]}>
-        <View style={styles.compactHeaderCopy}>
-          <Text style={styles.compactHeaderEyebrow}>{hero.eyebrow}</Text>
-          <Text style={styles.compactHeaderTitle}>{hero.title}</Text>
-          <Text style={styles.compactHeaderSubtitle}>{hero.subtitle}</Text>
-        </View>
+      <View style={styles.headerIntro}>
+        <LinearGradient
+          colors={["#17363a", "#27534d", "#7ea69d"]}
+          start={{ x: 0, y: 0 }}
+          end={{ x: 1, y: 1 }}
+          style={[styles.heroCard, isWide && styles.heroCardWide]}
+        >
+          <View style={styles.heroGlowOne} />
+          <View style={styles.heroGlowTwo} />
+          <View style={styles.heroLogoHalo}>
+            <Image
+              source={require("@/assets/images/logo aja 1.png")}
+              style={styles.heroLogo}
+            />
+          </View>
 
-        <View style={styles.compactHeaderMeter}>
-          <Text style={styles.compactHeaderMeterLabel}>
-            {isGoalsOnly ? "1 ecran" : `${displayStep}/${totalSteps}`}
-          </Text>
-          <Text style={styles.compactHeaderMeterValue}>{Math.round(progress)}%</Text>
-        </View>
-      </View>
+          <View style={styles.heroTopRow}>
+            <View style={styles.heroEyebrow}>
+              <Text style={styles.heroEyebrowText}>{hero.eyebrow}</Text>
+            </View>
+            <View style={styles.heroBadge}>
+              <Text style={styles.heroBadgeText}>
+                {isGoalsOnly ? "Objectifs" : `Etape ${displayStep}/${totalSteps}`}
+              </Text>
+            </View>
+          </View>
 
-      <View style={styles.progressTrackCompact}>
-        <View style={[styles.progressFillCompact, { width: `${progress}%` }]} />
+          <View style={styles.heroContent}>
+            <Text style={styles.heroTitle}>{hero.title}</Text>
+            <Text style={styles.heroSubtitle}>{hero.subtitle}</Text>
+          </View>
+
+          <View style={styles.heroProgressRow}>
+            <View style={styles.heroProgressCopy}>
+              <Text style={styles.heroProgressLabel}>Progression</Text>
+              <Text style={styles.heroProgressHint}>
+                {Math.round(progress) === 0
+                  ? "Renseignez vos premieres informations pour commencer."
+                  : `Votre profil prend forme, etape ${displayStep} sur ${totalSteps}.`}
+              </Text>
+            </View>
+            <View style={styles.heroMiniCard}>
+              <Text style={styles.heroMiniLabel}>Avancement</Text>
+              <Text style={styles.heroMiniValue}>{Math.round(progress)}%</Text>
+            </View>
+          </View>
+
+          <View style={styles.progressTrackCompact}>
+            <Animated.View
+              style={[styles.progressFillAnimated, { width: animatedProgressWidth }]}
+            >
+              <LinearGradient
+                colors={["#f7e3aa", "#ffffff"]}
+                start={{ x: 0, y: 0 }}
+                end={{ x: 1, y: 0 }}
+                style={styles.progressFillCompact}
+              />
+            </Animated.View>
+          </View>
+        </LinearGradient>
       </View>
 
       {/* Content */}
@@ -1298,19 +1654,19 @@ export function OnboardingScreen({
         {step === 1 && (
           <SectionFrame
             icon={User}
-            title="Vos informations"
-            subtitle="Quelques repÃƒÂ¨res pour personnaliser vos recommandations."
+            title="Commencons par l'essentiel"
+            subtitle="Renseignez vos informations de base pour personnaliser votre parcours."
             badge="Requis"
           >
             <FormField
-              label="PrÃƒÂ©nom"
+              label="Prenom"
               required
               icon={User}
               value={formData.firstname}
               onChangeText={(text) =>
                 setFormData({ ...formData, firstname: text })
               }
-              placeholder="Votre prÃƒÂ©nom"
+              placeholder="Votre prenom"
               focused={focusedField === "firstname"}
               onFocus={() => setFocusedField("firstname")}
               onBlur={() => setFocusedField(null)}
@@ -1403,37 +1759,52 @@ export function OnboardingScreen({
 
             <View style={[styles.metricRow, isWide && styles.metricRowWide]}>
               <View style={[styles.metricItem, isWide && styles.metricItemWide]}>
-                <FormField
+                <MetricRulerCard
                   label="Taille"
                   required
                   icon={Activity}
-                  value={formData.height}
-                  onChangeText={(text) =>
-                    setFormData({ ...formData, height: text })
+                  accent="#7ea69d"
+                  unitOptions={[
+                    { key: "cm", label: "Cm" },
+                    { key: "ft", label: "Feet" },
+                  ]}
+                  activeUnit={heightUnit}
+                  onChangeUnit={(nextUnit) =>
+                    setHeightUnit(nextUnit as HeightDisplayUnit)
                   }
-                  placeholder="170"
-                  keyboardType="numeric"
-                  unit="cm"
-                  focused={focusedField === "height"}
-                  onFocus={() => setFocusedField("height")}
-                  onBlur={() => setFocusedField(null)}
+                  selectedValue={displayedHeightValue}
+                  displayValue={formatHeightDisplay(displayedHeightValue, heightUnit)}
+                  helperValue={formatHeightHelper(displayedHeightValue, heightUnit)}
+                  values={heightUnit === "cm" ? HEIGHT_CM_VALUES : HEIGHT_IN_VALUES}
+                  onSelectValue={setHeightFromDisplay}
+                  getTickLabel={(value) => {
+                    if (heightUnit === "cm") {
+                      return value % 5 === 0 ? String(value) : "";
+                    }
+                    return value % 6 === 0 ? formatFeetAndInches(value) : "";
+                  }}
                 />
               </View>
               <View style={[styles.metricItem, isWide && styles.metricItemWide]}>
-                <FormField
+                <MetricRulerCard
                   label="Poids"
                   required
                   icon={Weight}
-                  value={formData.weight}
-                  onChangeText={(text) =>
-                    setFormData({ ...formData, weight: text })
+                  accent="#6e75c9"
+                  unitOptions={[
+                    { key: "kg", label: "Kg" },
+                    { key: "lb", label: "Pound" },
+                  ]}
+                  activeUnit={weightUnit}
+                  onChangeUnit={(nextUnit) =>
+                    setWeightUnit(nextUnit as WeightDisplayUnit)
                   }
-                  placeholder="70"
-                  keyboardType="numeric"
-                  unit="kg"
-                  focused={focusedField === "weight"}
-                  onFocus={() => setFocusedField("weight")}
-                  onBlur={() => setFocusedField(null)}
+                  selectedValue={displayedWeightValue}
+                  displayValue={formatWeightDisplay(displayedWeightValue, weightUnit)}
+                  helperValue={formatWeightHelper(displayedWeightValue, weightUnit)}
+                  values={weightUnit === "kg" ? WEIGHT_KG_VALUES : WEIGHT_LB_VALUES}
+                  onSelectValue={setWeightFromDisplay}
+                  getTickLabel={(value) => (value % 5 === 0 ? String(value) : "")}
                 />
               </View>
             </View>
@@ -1445,13 +1816,13 @@ export function OnboardingScreen({
           <SectionFrame
             icon={Baby}
             title="Situation actuelle"
-            subtitle="RÃƒÂ©pondez pour garder des recommandations sÃƒÂ»res."
+            subtitle="Repondez a ces deux questions pour garder des recommandations adaptees et sures."
             badge="Requis"
           >
             <View style={styles.questionStack}>
               <View style={styles.questionCard}>
                 <View style={styles.choiceBlockHeader}>
-                  <Text style={styles.choiceBlockTitle}>ÃƒÅ tes-vous enceinte ?</Text>
+                  <Text style={styles.choiceBlockTitle}>Etes-vous enceinte ?</Text>
                   <Text style={styles.choiceBlockHint}>Requis</Text>
                 </View>
                 <View style={[styles.choiceGrid, isWide && styles.choiceGridTwo]}>
@@ -1474,7 +1845,7 @@ export function OnboardingScreen({
                     <ChoiceCard
                       icon={XCircle}
                       title="Non"
-                      description="Pas concernÃƒÂ©e"
+                      description="Pas concernee"
                       selected={formData.pregnancy === false}
                       onPress={() => setFormData({ ...formData, pregnancy: false })}
                       accent="#d9a86c"
@@ -1486,7 +1857,7 @@ export function OnboardingScreen({
 
               <View style={styles.questionCard}>
                 <View style={styles.choiceBlockHeader}>
-                  <Text style={styles.choiceBlockTitle}>Allaitez-vous ?</Text>
+                  <Text style={styles.choiceBlockTitle}>Etes-vous enceinte ?</Text>
                   <Text style={styles.choiceBlockHint}>Requis</Text>
                 </View>
                 <View style={[styles.choiceGrid, isWide && styles.choiceGridTwo]}>
@@ -1509,7 +1880,7 @@ export function OnboardingScreen({
                     <ChoiceCard
                       icon={XCircle}
                       title="Non"
-                      description="Pas concernÃƒÂ©e"
+                      description="Pas concernee"
                       selected={formData.breastfeeding === false}
                       onPress={() => setFormData({ ...formData, breastfeeding: false })}
                       accent="#d9a86c"
@@ -1522,7 +1893,7 @@ export function OnboardingScreen({
 
             <View style={styles.helperCard}>
               <Text style={styles.helperText}>
-                Ces informations sont importantes pour ÃƒÂ©viter certains complÃƒÂ©ments contre-indiquÃƒÂ©s.
+                Ces informations sont importantes pour eviter certains complements contre-indiques.
               </Text>
             </View>
           </SectionFrame>
@@ -1532,7 +1903,7 @@ export function OnboardingScreen({
         {step === 3 && (
           <SectionFrame
             icon={Activity}
-            title="Niveau d'activitÃƒÂ© physique"
+            title="Niveau d'activite physique"
             subtitle="Pour ajuster les recommandations selon votre rythme."
             badge="Requis"
           >
@@ -1573,7 +1944,7 @@ export function OnboardingScreen({
             title="Quels sont vos objectifs ?"
             subtitle="Choisissez un ou plusieurs objectifs pour personnaliser votre parcours."
             badge="Requis"
-            countLabel={`${formData.goals.length} sÃƒÂ©lectionnÃƒÂ©${formData.goals.length > 1 ? "s" : ""}`}
+            countLabel={`${formData.goals.length} objectif${formData.goals.length > 1 ? "s" : ""} selectionne${formData.goals.length > 1 ? "s" : ""}`}
           >
             <View style={[styles.choiceGrid, isWide && styles.choiceGridTwo]}>
               {goalOptions.map((goal) => {
@@ -1603,16 +1974,16 @@ export function OnboardingScreen({
         {step === 5 && (
           <SectionFrame
             icon={Shield}
-            title="PrÃƒÂ©cautions mÃƒÂ©dicales"
-            subtitle="Facultatif, mais utile pour ÃƒÂ©viter certaines interactions."
+            title="Precautions medicales"
+            subtitle="Facultatif, mais utile pour eviter certaines interactions."
             badge="Optionnel"
-            countLabel={`${formData.conditions.length} sÃƒÂ©lectionnÃƒÂ©${formData.conditions.length > 1 ? "s" : ""}`}
+            countLabel={`${formData.conditions.length} precaution${formData.conditions.length > 1 ? "s" : ""} renseignee${formData.conditions.length > 1 ? "s" : ""}`}
           >
             <View style={styles.groupCard}>
               <View style={styles.groupHeader}>
                 <View style={styles.groupTitleRow}>
                   <Pill size={18} color="#7ea69d" />
-                  <Text style={styles.groupTitle}>MÃƒÂ©dicaments</Text>
+                  <Text style={styles.groupTitle}>Medicaments</Text>
                 </View>
               </View>
               <View style={styles.chipWrap}>
@@ -1631,7 +2002,7 @@ export function OnboardingScreen({
               <View style={styles.groupHeader}>
                 <View style={styles.groupTitleRow}>
                   <Heart size={18} color="#7ea69d" />
-                  <Text style={styles.groupTitle}>Conditions de santÃƒÂ©</Text>
+                  <Text style={styles.groupTitle}>Conditions de sante</Text>
                 </View>
               </View>
               <View style={styles.chipWrap}>
@@ -1668,7 +2039,7 @@ export function OnboardingScreen({
 
             <View style={styles.helperCard}>
               <Text style={styles.helperText}>
-                Ces informations aident ÃƒÂ  personnaliser vos recommandations en toute sÃƒÂ©curitÃƒÂ©.
+                Ces informations aident a personnaliser vos recommandations en toute securite.
               </Text>
             </View>
           </SectionFrame>
@@ -1678,10 +2049,10 @@ export function OnboardingScreen({
         {step === 6 && (
           <SectionFrame
             icon={Heart}
-            title="Pathologies diagnostiquÃƒÂ©es"
-            subtitle="Facultatif - vous pouvez laisser vide si besoin."
+            title="Pathologies diagnostiquees"
+            subtitle="Ajoutez vos pathologies ou allergies connues pour affiner les recommandations."
             badge="Optionnel"
-            countLabel={`${formData.diseases.length} sÃƒÂ©lectionnÃƒÂ©e${formData.diseases.length > 1 ? "s" : ""}`}
+            countLabel={`${formData.diseases.length} pathologie${formData.diseases.length > 1 ? "s" : ""} selectionnee${formData.diseases.length > 1 ? "s" : ""}`}
           >
             <View style={styles.chipWrap}>
               {DISEASES.map((o) => (
@@ -1703,7 +2074,7 @@ export function OnboardingScreen({
                 <Text style={styles.groupCount}>
                   {formData.allergies.includes("none")
                     ? "Aucune"
-                    : `${formData.allergies.length} sÃƒÂ©lectionnÃƒÂ©e${formData.allergies.length > 1 ? "s" : ""}`}
+                    : `${formData.allergies.length} allergie${formData.allergies.length > 1 ? "s" : ""} selectionnee${formData.allergies.length > 1 ? "s" : ""}`}
                 </Text>
               </View>
               <View style={styles.chipWrap}>
@@ -1728,29 +2099,24 @@ export function OnboardingScreen({
           <View style={styles.ctaWrap}>
             <TouchableOpacity
               onPress={handleNext}
-              style={[styles.ctaButton, saving && styles.ctaButtonDisabled]}
+              style={saving ? styles.ctaButtonDisabled : undefined}
               disabled={saving}
               activeOpacity={0.9}
             >
-              {saving ? (
-                <ActivityIndicator color="white" />
-              ) : (
-                <>
-                  <Text style={styles.ctaText}>
-                    {isGoalsOnly
-                      ? "Enregistrer mes objectifs"
-                      : step === totalSteps
-                      ? "Valider & accÃƒÂ©der ÃƒÂ  mon espace"
-                      : "Continuer"}
-                  </Text>
-                  {!isGoalsOnly && <ArrowRight size={20} color="white" />}
-                </>
-              )}
+              <LinearGradient
+                colors={["#17363a", "#2b6158"]}
+                start={{ x: 0, y: 0 }}
+                end={{ x: 1, y: 0 }}
+                style={styles.ctaButton}
+              >
+                {saving ? (
+                  <ActivityIndicator color="white" />
+                ) : (
+                  <Text style={styles.ctaText}>{ctaLabel}</Text>
+                )}
+              </LinearGradient>
             </TouchableOpacity>
           </View>
-          <Text style={styles.bottomHint}>
-            Les champs marquÃƒÂ©s comme requis doivent etre remplis pour continuer.
-          </Text>
         </View>
       </View>
     </View>
@@ -1797,7 +2163,7 @@ const styles = StyleSheet.create({
   },
   scrollContent: {
     paddingHorizontal: 24,
-    paddingBottom: 120,
+    paddingBottom: 16,
   },
   stepContainer: {
     gap: 32,
@@ -2064,7 +2430,7 @@ const styles = StyleSheet.create({
     flexDirection: "row",
     alignItems: "center",
     justifyContent: "space-between",
-    marginBottom: 16,
+    marginBottom: 12,
     gap: 12,
   },
   backButtonHidden: {
@@ -2092,21 +2458,26 @@ const styles = StyleSheet.create({
     alignItems: "center",
     justifyContent: "center",
     overflow: "hidden",
+    shadowColor: "#17363a",
+    shadowOffset: { width: 0, height: 6 },
+    shadowOpacity: 0.08,
+    shadowRadius: 12,
+    elevation: 3,
   },
   brandLogo: {
     width: 30,
     height: 30,
+  },
+  headerIntro: {
+    marginBottom: 16,
   },
   compactHeaderCard: {
     borderRadius: 28,
     backgroundColor: "rgba(255,255,255,0.92)",
     borderWidth: 1,
     borderColor: "rgba(255,255,255,0.84)",
-    padding: 18,
+    padding: 20,
     marginBottom: 12,
-    flexDirection: "row",
-    alignItems: "center",
-    justifyContent: "space-between",
     gap: 14,
     shadowColor: "#000",
     shadowOffset: { width: 0, height: 6 },
@@ -2118,8 +2489,38 @@ const styles = StyleSheet.create({
     paddingHorizontal: 22,
   },
   compactHeaderCopy: {
-    flex: 1,
-    gap: 6,
+    gap: 10,
+  },
+  compactHeaderAccent: {
+    width: 64,
+    height: 4,
+    borderRadius: 999,
+    backgroundColor: "rgba(126, 166, 157, 0.45)",
+  },
+  compactHeaderTopRow: {
+    flexDirection: "row",
+    alignItems: "center",
+    justifyContent: "space-between",
+    gap: 12,
+  },
+  compactHeaderEyebrowPill: {
+    alignSelf: "flex-start",
+    paddingHorizontal: 10,
+    paddingVertical: 6,
+    borderRadius: 999,
+    backgroundColor: "rgba(126,166,157,0.14)",
+  },
+  compactHeaderStepPill: {
+    alignSelf: "flex-start",
+    paddingHorizontal: 12,
+    paddingVertical: 8,
+    borderRadius: 999,
+    backgroundColor: "#eef3ef",
+  },
+  compactHeaderStepText: {
+    fontSize: 12,
+    fontWeight: "800",
+    color: "#1f3f43",
   },
   compactHeaderEyebrow: {
     fontSize: 11,
@@ -2129,15 +2530,33 @@ const styles = StyleSheet.create({
     textTransform: "uppercase",
   },
   compactHeaderTitle: {
-    fontSize: 24,
-    lineHeight: 28,
+    fontSize: 31,
+    lineHeight: 35,
     fontWeight: "800",
+    letterSpacing: -0.8,
     color: "#14272d",
   },
   compactHeaderSubtitle: {
     fontSize: 14,
-    lineHeight: 21,
-    color: "#6b8b83",
+    lineHeight: 22,
+    color: "#58786f",
+    maxWidth: 620,
+  },
+  compactHeaderProgressRow: {
+    flexDirection: "row",
+    alignItems: "center",
+    justifyContent: "space-between",
+    gap: 10,
+  },
+  compactHeaderProgressLabel: {
+    fontSize: 13,
+    fontWeight: "700",
+    color: "#58786f",
+  },
+  compactHeaderProgressValue: {
+    fontSize: 13,
+    fontWeight: "800",
+    color: "#1f3f43",
   },
   compactHeaderMeter: {
     minWidth: 88,
@@ -2161,113 +2580,162 @@ const styles = StyleSheet.create({
   },
   progressTrackCompact: {
     width: "100%",
-    height: 8,
+    height: 12,
     borderRadius: 999,
-    backgroundColor: "rgba(20,39,45,0.08)",
+    backgroundColor: "rgba(255,255,255,0.18)",
     overflow: "hidden",
-    marginBottom: 16,
+  },
+  progressFillAnimated: {
+    height: "100%",
+    borderRadius: 999,
+    overflow: "hidden",
   },
   progressFillCompact: {
     height: "100%",
     borderRadius: 999,
-    backgroundColor: "#7ea69d",
+    backgroundColor: "#ffffff",
   },
   heroCard: {
     position: "relative",
     overflow: "hidden",
     borderRadius: 30,
-    padding: 20,
-    marginBottom: 16,
-    minHeight: 180,
-    flexDirection: "row",
-    alignItems: "center",
-    justifyContent: "space-between",
+    paddingTop: 18,
+    paddingHorizontal: 18,
+    paddingBottom: 20,
+    minHeight: 220,
     borderWidth: 1,
-    borderColor: "rgba(255,255,255,0.1)",
-    shadowColor: "#000",
-    shadowOffset: { width: 0, height: 8 },
-    shadowOpacity: 0.12,
-    shadowRadius: 18,
+    borderColor: "rgba(255,255,255,0.12)",
+    shadowColor: "#17363a",
+    shadowOffset: { width: 0, height: 10 },
+    shadowOpacity: 0.16,
+    shadowRadius: 22,
     elevation: 6,
   },
   heroCardWide: {
-    minHeight: 200,
+    paddingHorizontal: 22,
+    paddingTop: 20,
+    paddingBottom: 22,
   },
   heroContent: {
-    flex: 1,
     gap: 10,
-    paddingRight: 12,
+    paddingRight: 56,
+    marginBottom: 18,
+    zIndex: 2,
+  },
+  heroTopRow: {
+    flexDirection: "row",
+    alignItems: "center",
+    justifyContent: "space-between",
+    gap: 12,
+    marginBottom: 18,
+    zIndex: 2,
   },
   heroEyebrow: {
     alignSelf: "flex-start",
     paddingHorizontal: 12,
     paddingVertical: 6,
     borderRadius: 999,
-    backgroundColor: "rgba(255,255,255,0.16)",
+    backgroundColor: "rgba(255,255,255,0.18)",
   },
   heroEyebrowText: {
     color: "#ffffff",
     fontSize: 11,
-    fontWeight: "700",
-    letterSpacing: 0.8,
+    fontWeight: "800",
+    letterSpacing: 0.9,
+    textTransform: "uppercase",
   },
   heroTitle: {
-    fontSize: 30,
-    lineHeight: 34,
+    fontSize: 34,
+    lineHeight: 38,
     fontWeight: "800",
     color: "#ffffff",
-    letterSpacing: -0.6,
+    letterSpacing: -0.9,
   },
   heroSubtitle: {
+    maxWidth: 520,
     fontSize: 14,
     lineHeight: 22,
-    color: "rgba(255,255,255,0.86)",
-  },
-  heroBadgeRow: {
-    flexDirection: "row",
-    flexWrap: "wrap",
-    gap: 8,
-    marginTop: 2,
+    color: "rgba(255,255,255,0.84)",
   },
   heroBadge: {
-    paddingHorizontal: 10,
-    paddingVertical: 6,
+    paddingHorizontal: 12,
+    paddingVertical: 8,
     borderRadius: 999,
     backgroundColor: "rgba(255,255,255,0.14)",
+    borderWidth: 1,
+    borderColor: "rgba(255,255,255,0.16)",
   },
   heroBadgeText: {
     color: "#ffffff",
-    fontSize: 11,
-    fontWeight: "600",
+    fontSize: 12,
+    fontWeight: "700",
   },
-  heroVisual: {
-    width: 128,
-    alignItems: "center",
-    justifyContent: "center",
-    gap: 10,
+  heroLogo: {
+    width: 44,
+    height: 44,
   },
-  heroOrb: {
-    width: 104,
-    height: 104,
-    borderRadius: 52,
-    backgroundColor: "rgba(255,255,255,0.16)",
+  heroLogoHalo: {
+    position: "absolute",
+    right: -10,
+    top: -8,
+    width: 118,
+    height: 118,
+    borderRadius: 59,
+    backgroundColor: "rgba(255,255,255,0.08)",
     alignItems: "center",
     justifyContent: "center",
     borderWidth: 1,
-    borderColor: "rgba(255,255,255,0.12)",
+    borderColor: "rgba(255,255,255,0.08)",
   },
-  heroLogo: {
-    width: 60,
-    height: 60,
+  heroGlowOne: {
+    position: "absolute",
+    width: 150,
+    height: 150,
+    borderRadius: 999,
+    backgroundColor: "rgba(246, 219, 160, 0.14)",
+    top: -56,
+    right: 18,
+  },
+  heroGlowTwo: {
+    position: "absolute",
+    width: 124,
+    height: 124,
+    borderRadius: 999,
+    backgroundColor: "rgba(255,255,255,0.08)",
+    bottom: -48,
+    left: -18,
+  },
+  heroProgressRow: {
+    flexDirection: "row",
+    alignItems: "flex-end",
+    justifyContent: "space-between",
+    gap: 14,
+    marginBottom: 14,
+    zIndex: 2,
+  },
+  heroProgressCopy: {
+    flex: 1,
+    gap: 4,
+    paddingRight: 12,
+  },
+  heroProgressLabel: {
+    fontSize: 13,
+    fontWeight: "800",
+    color: "#ffffff",
+  },
+  heroProgressHint: {
+    fontSize: 12,
+    lineHeight: 18,
+    color: "rgba(255,255,255,0.74)",
   },
   heroMiniCard: {
-    width: 128,
+    minWidth: 96,
     borderRadius: 18,
     backgroundColor: "rgba(255,255,255,0.14)",
     paddingVertical: 10,
     paddingHorizontal: 12,
     borderWidth: 1,
-    borderColor: "rgba(255,255,255,0.1)",
+    borderColor: "rgba(255,255,255,0.12)",
     alignItems: "center",
   },
   heroMiniLabel: {
@@ -2586,6 +3054,129 @@ const styles = StyleSheet.create({
     flexBasis: "48%",
     maxWidth: "48%",
   },
+  metricPickerCard: {
+    borderRadius: 24,
+    backgroundColor: "rgba(247,250,248,0.98)",
+    borderWidth: 1,
+    borderColor: "rgba(20,39,45,0.06)",
+    padding: 16,
+    gap: 14,
+  },
+  metricPickerHeader: {
+    flexDirection: "row",
+    alignItems: "center",
+    justifyContent: "space-between",
+    gap: 10,
+  },
+  metricPickerTitleRow: {
+    flexDirection: "row",
+    alignItems: "center",
+    gap: 10,
+  },
+  metricPickerIconWrap: {
+    width: 34,
+    height: 34,
+    borderRadius: 12,
+    backgroundColor: "#ffffff",
+    alignItems: "center",
+    justifyContent: "center",
+  },
+  metricPickerLabel: {
+    fontSize: 14,
+    fontWeight: "700",
+    color: "#14272d",
+  },
+  metricUnitSwitch: {
+    alignSelf: "flex-start",
+    flexDirection: "row",
+    borderRadius: 999,
+    backgroundColor: "rgba(20,39,45,0.06)",
+    padding: 4,
+    gap: 4,
+  },
+  metricUnitButton: {
+    minWidth: 68,
+    paddingHorizontal: 12,
+    paddingVertical: 8,
+    borderRadius: 999,
+    alignItems: "center",
+    justifyContent: "center",
+  },
+  metricUnitButtonText: {
+    fontSize: 12,
+    fontWeight: "700",
+    color: "#6b8b83",
+  },
+  metricUnitButtonTextActive: {
+    color: "#ffffff",
+  },
+  metricValueWrap: {
+    alignItems: "center",
+    gap: 4,
+  },
+  metricValueText: {
+    fontSize: 34,
+    lineHeight: 38,
+    fontWeight: "800",
+    color: "#1e2d63",
+  },
+  metricValueHelper: {
+    fontSize: 12,
+    color: "#6b8b83",
+  },
+  metricPointerWrap: {
+    alignItems: "center",
+    gap: 4,
+  },
+  metricPointerLine: {
+    width: 2,
+    height: 20,
+    borderRadius: 999,
+  },
+  metricPointerDot: {
+    width: 8,
+    height: 8,
+    borderRadius: 999,
+  },
+  metricRulerContent: {
+    paddingHorizontal: 8,
+    paddingVertical: 6,
+    alignItems: "flex-end",
+  },
+  metricTickButton: {
+    width: 28,
+    alignItems: "center",
+    justifyContent: "flex-end",
+    gap: 8,
+    paddingTop: 4,
+  },
+  metricTick: {
+    width: 2,
+    borderRadius: 999,
+    backgroundColor: "rgba(20,39,45,0.2)",
+  },
+  metricTickMinor: {
+    height: 14,
+  },
+  metricTickMajor: {
+    height: 24,
+  },
+  metricTickLabel: {
+    minHeight: 18,
+    fontSize: 10,
+    color: "#9aa7a2",
+    textAlign: "center",
+  },
+  metricSelectedTriangle: {
+    width: 0,
+    height: 0,
+    borderLeftWidth: 5,
+    borderRightWidth: 5,
+    borderTopWidth: 8,
+    borderLeftColor: "transparent",
+    borderRightColor: "transparent",
+    marginTop: -2,
+  },
   fieldCard: {
     gap: 8,
   },
@@ -2842,41 +3433,28 @@ const styles = StyleSheet.create({
     fontWeight: "700",
   },
   bottomBar: {
-    position: "absolute",
-    left: 0,
-    right: 0,
-    bottom: 0,
     paddingHorizontal: 20,
-    paddingTop: 14,
-    paddingBottom: 20,
+    paddingTop: 4,
+    paddingBottom: 12,
   },
   bottomShell: {
     width: "100%",
     maxWidth: 760,
     alignSelf: "center",
-    borderRadius: 26,
-    backgroundColor: "rgba(255,255,255,0.94)",
-    borderWidth: 1,
-    borderColor: "rgba(255,255,255,0.84)",
-    padding: 14,
-    shadowColor: "#000",
-    shadowOffset: { width: 0, height: 6 },
-    shadowOpacity: 0.08,
-    shadowRadius: 14,
-    elevation: 4,
+    paddingHorizontal: 0,
+    paddingVertical: 0,
   },
   ctaWrap: {
-    borderRadius: 20,
+    borderRadius: 16,
     overflow: "hidden",
   },
   ctaButton: {
-    minHeight: 56,
-    borderRadius: 20,
+    minHeight: 52,
+    borderRadius: 16,
     paddingHorizontal: 18,
     flexDirection: "row",
     alignItems: "center",
     justifyContent: "center",
-    gap: 10,
   },
   ctaButtonDisabled: {
     opacity: 0.72,
@@ -2885,13 +3463,6 @@ const styles = StyleSheet.create({
     color: "#ffffff",
     fontSize: 16,
     fontWeight: "800",
-  },
-  bottomHint: {
-    marginTop: 10,
-    textAlign: "center",
-    fontSize: 11,
-    lineHeight: 16,
-    color: "#6b8b83",
   },
 });
 

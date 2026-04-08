@@ -1,3 +1,4 @@
+import { HeaderLogoutButton } from "@/components/header-logout-button";
 import { useAuth } from "@/context/auth";
 import {
   getDecisionForMe,
@@ -923,8 +924,13 @@ export function RecommendationsScreen() {
       contentContainerStyle={styles.contentContainer}
     >
       <View className="rounded-b-3xl bg-aja-ink px-6 py-6" style={styles.header}>
-        <Text style={styles.headerTitle}>Recommandations</Text>
-        <Text style={styles.headerSubtitle}>Plan personnalise</Text>
+        <View style={styles.headerTopRow}>
+          <View style={{ flex: 1 }}>
+            <Text style={styles.headerTitle}>Recommandations</Text>
+            <Text style={styles.headerSubtitle}>Plan personnalise</Text>
+          </View>
+          <HeaderLogoutButton />
+        </View>
       </View>
 
       <View className="-mt-4 gap-4 px-6" style={styles.mainContent}>
@@ -1387,6 +1393,12 @@ const styles = StyleSheet.create({
     paddingVertical: 24,
     borderBottomLeftRadius: 24,
     borderBottomRightRadius: 24,
+  },
+  headerTopRow: {
+    flexDirection: "row",
+    alignItems: "center",
+    justifyContent: "space-between",
+    gap: 12,
   },
   headerTitle: {
     color: "white",
