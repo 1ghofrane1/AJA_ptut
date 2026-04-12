@@ -32,6 +32,14 @@ type SupplementDetail = EncyclopedieSupplementDetailResponse;
 
 const DEFAULT_SUPPLEMENT_IMAGE = require("@/assets/images/logo aja 1.png");
 
+interface EncyclopedieScreenProps {
+  initialSupplementTarget?: {
+    id: string;
+    name: string;
+  } | null;
+  onInitialSupplementHandled?: () => void;
+}
+
 const SUPPLEMENT_IMAGE_SOURCES: Record<string, number> = {
   "5-htp": require("@/assets/images/complements/5-htp.png"),
   "alpha-gpc": require("@/assets/images/complements/alpha-gpc.png"),
@@ -105,7 +113,19 @@ function AccordionItem({ icon: Icon, title, children }: AccordionItemProps) {
   );
 }
 
-export function EncyclopedieScreen() {
+function normalizeLookupText(value: string) {
+  return value
+    .normalize("NFD")
+    .replace(/[\u0300-\u036f]/g, "")
+    .toLowerCase()
+    .replace(/[^a-z0-9]+/g, " ")
+    .trim();
+}
+
+export function EncyclopedieScreen({
+  initialSupplementTarget,
+  onInitialSupplementHandled,
+}: EncyclopedieScreenProps) {
   const insets = useSafeAreaInsets();
   const [searchQuery, setSearchQuery] = useState("");
   const [selectedCategory, setSelectedCategory] = useState<string | null>(null);
@@ -177,6 +197,57 @@ export function EncyclopedieScreen() {
       setSelectedLoading(false);
     }
   }
+
+  useEffect(() => {
+    if (!initialSupplementTarget) return;
+
+    onInitialSupplementHandled?.();
+    setSelectedSupplement(null);
+    setSelectedLoading(true);
+    setListError(null);
+
+    void (async () => {
+      try {
+        const directId = initialSupplementTarget.id?.trim();
+        const supplementName = initialSupplementTarget.name?.trim();
+
+        if (directId && !directId.includes("::")) {
+          try {
+            const detail = await getEncyclopedieSupplement(directId);
+            setSelectedSupplement(detail);
+            return;
+          } catch {
+            // Fall through to name lookup when the id is not an encyclopedie slug.
+          }
+        }
+
+        if (!supplementName) {
+          throw new Error("missing-name");
+        }
+
+        const candidates = await listEncyclopedieSupplements({
+          q: supplementName,
+          limit: 20,
+        });
+        const targetNameKey = normalizeLookupText(supplementName);
+        const matched =
+          candidates.find(
+            (item) => normalizeLookupText(item.name) === targetNameKey,
+          ) ?? candidates[0];
+
+        if (!matched) {
+          throw new Error("not-found");
+        }
+
+        const detail = await getEncyclopedieSupplement(matched.id);
+        setSelectedSupplement(detail);
+      } catch {
+        setListError("Impossible de charger les details du complement.");
+      } finally {
+        setSelectedLoading(false);
+      }
+    })();
+  }, [initialSupplementTarget, onInitialSupplementHandled]);
 
   const filteredSupplements = supplements;
 

@@ -72,6 +72,13 @@ type SupplementHistoryEntry = {
 
 type AnyRecord = Record<string, any>;
 
+type RecommendationsScreenProps = {
+  onOpenSupplementInEncyclopedie?: (target: {
+    id: string;
+    name: string;
+  }) => void;
+};
+
 const OBJECTIVE_LABELS: Record<string, string> = {
   mood_depression_support: "Ameliorer mon humeur",
   stress_anxiety_support: "Gerer le stress et l'anxiete",
@@ -519,7 +526,9 @@ function extractApiErrorMessage(error: any) {
   return null;
 }
 
-export function RecommendationsScreen() {
+export function RecommendationsScreen({
+  onOpenSupplementInEncyclopedie,
+}: RecommendationsScreenProps) {
   const { token, user } = useAuth();
   const insets = useSafeAreaInsets();
   const [expandedId, setExpandedId] = useState<string | null>(null);
@@ -1208,7 +1217,16 @@ export function RecommendationsScreen() {
                                 </View>
                               )}
 
-                              <TouchableOpacity style={styles.learnMoreButton}>
+                              <TouchableOpacity
+                                style={styles.learnMoreButton}
+                                onPress={() =>
+                                  onOpenSupplementInEncyclopedie?.({
+                                    id: supplement.id,
+                                    name: supplement.name,
+                                  })
+                                }
+                                activeOpacity={0.88}
+                              >
                                 <Text style={styles.learnMoreText}>
                                   En savoir plus
                                 </Text>

@@ -10,7 +10,7 @@ import { WelcomeScreen } from "@/components/screens/welcome-screen";
 import { AuthProvider, useAuth } from "@/context/auth";
 import { type UserResponse } from "@/services/api";
 import { QueryClient, QueryClientProvider } from "@tanstack/react-query";
-import { useEffect, useState } from "react";
+import { useCallback, useEffect, useState } from "react";
 import { SafeAreaProvider, SafeAreaView } from "react-native-safe-area-context";
 import {
   ActivityIndicator,
@@ -72,6 +72,10 @@ function RootApp() {
   const { token, user, loading } = useAuth();
   const [currentScreen, setCurrentScreen] = useState<Screen>("welcome");
   const [activeTab, setActiveTab] = useState<Tab>("accueil");
+  const [encyclopedieSupplementTarget, setEncyclopedieSupplementTarget] = useState<{
+    id: string;
+    name: string;
+  } | null>(null);
 
   useEffect(() => {
     if (loading) return;
@@ -98,8 +102,21 @@ function RootApp() {
   };
 
   const handleTabChange = (tab: string) => {
+    setEncyclopedieSupplementTarget(null);
     setActiveTab(tab as Tab);
   };
+
+  const handleOpenSupplementInEncyclopedie = useCallback((target: {
+    id: string;
+    name: string;
+  }) => {
+    setEncyclopedieSupplementTarget(target);
+    setActiveTab("encyclopedie");
+  }, []);
+
+  const handleEncyclopedieSupplementHandled = useCallback(() => {
+    setEncyclopedieSupplementTarget(null);
+  }, []);
 
   if (loading) {
     return (
@@ -156,11 +173,20 @@ function RootApp() {
             onOpenTracking={() => setActiveTab("suivi")}
           />
         )}
-        {activeTab === "recommandations" && <RecommendationsScreen />}
+        {activeTab === "recommandations" && (
+          <RecommendationsScreen
+            onOpenSupplementInEncyclopedie={handleOpenSupplementInEncyclopedie}
+          />
+        )}
         {activeTab === "suivi" && (
           <SuiviScreen onOpenRecommendations={() => setActiveTab("recommandations")} />
         )}
-        {activeTab === "encyclopedie" && <EncyclopedieScreen />}
+        {activeTab === "encyclopedie" && (
+          <EncyclopedieScreen
+            initialSupplementTarget={encyclopedieSupplementTarget}
+            onInitialSupplementHandled={handleEncyclopedieSupplementHandled}
+          />
+        )}
       </View>
 
       <BottomNavigation
