@@ -11,7 +11,7 @@ import { AuthProvider, useAuth } from "@/context/auth";
 import { type UserResponse } from "@/services/api";
 import { QueryClient, QueryClientProvider } from "@tanstack/react-query";
 import { useEffect, useState } from "react";
-import { SafeAreaProvider } from "react-native-safe-area-context";
+import { SafeAreaProvider, SafeAreaView } from "react-native-safe-area-context";
 import {
   ActivityIndicator,
   StyleSheet,
@@ -103,9 +103,13 @@ function RootApp() {
 
   if (loading) {
     return (
-      <View className="flex-1 items-center justify-center bg-aja-cream" style={styles.loadingContainer}>
+      <SafeAreaView
+        className="flex-1 items-center justify-center bg-aja-cream"
+        style={styles.loadingContainer}
+        edges={["top", "bottom"]}
+      >
         <ActivityIndicator size="large" color="#7ea69d" />
-      </View>
+      </SafeAreaView>
     );
   }
 
@@ -119,7 +123,7 @@ function RootApp() {
     currentScreen === "profile"
   ) {
     return (
-      <View className="flex-1 bg-aja-cream" style={styles.container}>
+      <SafeAreaView className="flex-1 bg-aja-cream" style={styles.container} edges={["top", "bottom"]}>
         {currentScreen === "welcome" && (
           <WelcomeScreen onNavigate={handleNavigate} />
         )}
@@ -138,7 +142,7 @@ function RootApp() {
         {currentScreen === "profile" && (
           <OnboardingScreen onNavigate={handleNavigate} mode="profile" />
         )}
-      </View>
+      </SafeAreaView>
     );
   }
 

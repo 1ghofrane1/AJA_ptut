@@ -905,7 +905,7 @@ export function RecommendationsScreen() {
     <ScrollView
       className="flex-1 bg-aja-cream"
       style={styles.container}
-      contentContainerStyle={styles.contentContainer}
+      contentContainerStyle={[styles.contentContainer, { paddingBottom: insets.bottom + 24 }]}
     >
       <View
         className="rounded-b-3xl bg-aja-ink px-6 py-6"
@@ -1377,7 +1377,7 @@ const styles = StyleSheet.create({
     backgroundColor: "#fef6e2",
   },
   contentContainer: {
-    paddingBottom: 96,
+    paddingBottom: 24,
   },
   header: {
     backgroundColor: "#14272d",

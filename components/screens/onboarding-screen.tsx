@@ -1829,12 +1829,7 @@ export function OnboardingScreen({
         >
           <View style={styles.heroGlowOne} />
           <View style={styles.heroGlowTwo} />
-          <View style={styles.heroLogoHalo}>
-            <Image
-              source={require("@/assets/images/logo aja 1.png")}
-              style={styles.heroLogo}
-            />
-          </View>
+          
 
           <View style={styles.heroTopRow}>
             <View style={styles.heroEyebrow}>
@@ -3504,15 +3499,17 @@ const styles = StyleSheet.create({
     gap: 6,
   },
   sectionTitleRow: {
-    flexDirection: "row",
-    alignItems: "center",
-    justifyContent: "space-between",
-    gap: 12,
+    flexDirection: "column",
+    alignItems: "flex-start",
+    justifyContent: "flex-start",
+    gap: 10,
   },
   sectionPills: {
     flexDirection: "row",
     alignItems: "center",
     gap: 8,
+    flexWrap: "wrap",
+    width: "100%",
   },
   pill: {
     paddingHorizontal: 10,
@@ -3552,16 +3549,20 @@ const styles = StyleSheet.create({
   },
   choiceBlockHeader: {
     flexDirection: "row",
-    alignItems: "center",
+    alignItems: "flex-start",
     justifyContent: "space-between",
     gap: 10,
+    flexWrap: "wrap",
   },
   choiceBlockTitle: {
+    flex: 1,
+    minWidth: 0,
     fontSize: 15,
     fontWeight: "700",
     color: "#14272d",
   },
   choiceBlockHint: {
+    flexShrink: 0,
     fontSize: 11,
     fontWeight: "800",
     letterSpacing: 0.5,
@@ -3716,14 +3717,17 @@ const styles = StyleSheet.create({
   },
   metricPickerHeader: {
     flexDirection: "row",
-    alignItems: "center",
+    alignItems: "flex-start",
     justifyContent: "space-between",
     gap: 10,
+    flexWrap: "wrap",
   },
   metricPickerTitleRow: {
     flexDirection: "row",
     alignItems: "center",
     gap: 10,
+    flex: 1,
+    minWidth: 0,
   },
   metricPickerIconWrap: {
     width: 34,
@@ -3734,6 +3738,7 @@ const styles = StyleSheet.create({
     justifyContent: "center",
   },
   metricPickerLabel: {
+    flexShrink: 1,
     fontSize: 14,
     fontWeight: "700",
     color: "#14272d",
@@ -3834,16 +3839,20 @@ const styles = StyleSheet.create({
   },
   fieldHeader: {
     flexDirection: "row",
-    alignItems: "center",
+    alignItems: "flex-start",
     justifyContent: "space-between",
     gap: 10,
+    flexWrap: "wrap",
   },
   fieldLabel: {
+    flex: 1,
+    minWidth: 0,
     fontSize: 14,
     fontWeight: "700",
     color: "#14272d",
   },
   requiredTag: {
+    flexShrink: 0,
     paddingHorizontal: 8,
     paddingVertical: 4,
     borderRadius: 999,

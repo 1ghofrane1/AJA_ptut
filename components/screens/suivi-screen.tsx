@@ -726,7 +726,11 @@ export function SuiviScreen({ onOpenRecommendations }: SuiviScreenProps) {
 
   return (
     <View className="flex-1 bg-aja-cream" style={styles.container}>
-      <ScrollView className="flex-1 bg-aja-cream" style={styles.container} contentContainerStyle={styles.contentContainer}>
+      <ScrollView
+        className="flex-1 bg-aja-cream"
+        style={styles.container}
+        contentContainerStyle={[styles.contentContainer, { paddingBottom: insets.bottom + 24 }]}
+      >
         <View
           className="rounded-b-3xl bg-aja-ink px-6 pt-6 pb-5"
           style={[styles.header, { paddingTop: insets.top + 18 }]}
@@ -1596,7 +1600,7 @@ const styles = StyleSheet.create({
     backgroundColor: "#fef6e2",
   },
   contentContainer: {
-    paddingBottom: 96,
+    paddingBottom: 24,
   },
   header: {
     backgroundColor: "#14272d",

@@ -20,15 +20,6 @@ export function WelcomeScreen({ onNavigate }: WelcomeScreenProps) {
         <View style={styles.shape2} />
         <View style={styles.shape3} />
       </View>
-
-      {/* Language selector */}
-      <View style={styles.languageSelector}>
-        <TouchableOpacity style={styles.languageButton}>
-          <Globe size={16} color="#14272d" />
-          <Text style={styles.languageText}>FR</Text>
-        </TouchableOpacity>
-      </View>
-
       {/* Main content */}
       <View className="z-10 w-full max-w-96 flex-1 self-center items-center justify-center" style={styles.mainContent}>
         {/* Logo */}

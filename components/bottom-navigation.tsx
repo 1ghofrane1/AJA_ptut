@@ -5,6 +5,7 @@ import {
   TrendingUp,
 } from "lucide-react-native";
 import { StyleSheet, Text, TouchableOpacity, View } from "react-native";
+import { useSafeAreaInsets } from "react-native-safe-area-context";
 
 interface BottomNavigationProps {
   activeTab: string;
@@ -15,6 +16,7 @@ export function BottomNavigation({
   activeTab,
   onTabChange,
 }: BottomNavigationProps) {
+  const insets = useSafeAreaInsets();
   const tabs = [
     { id: "accueil", label: "Accueil", icon: Home },
     { id: "recommandations", label: "Recommandations", icon: FileText },
@@ -23,7 +25,7 @@ export function BottomNavigation({
   ];
 
   return (
-    <View className="absolute bottom-0 left-0 right-0 z-50 border-t border-black/10 bg-white" style={styles.nav}>
+    <View style={[styles.nav, { paddingBottom: Math.max(insets.bottom, 10) }]}>
       <View className="flex-row items-center justify-around px-2 py-3" style={styles.container}>
         {tabs.map((tab) => {
           const Icon = tab.icon;
@@ -56,21 +58,21 @@ export function BottomNavigation({
 
 const styles = StyleSheet.create({
   nav: {
-    position: 'absolute',
-    bottom: 0,
-    left: 0,
-    right: 0,
     backgroundColor: 'white',
     borderTopWidth: 1,
     borderTopColor: 'rgba(20, 39, 45, 0.1)',
-    zIndex: 50,
+    shadowColor: '#000',
+    shadowOffset: { width: 0, height: -2 },
+    shadowOpacity: 0.05,
+    shadowRadius: 8,
+    elevation: 10,
   },
   container: {
     flexDirection: 'row',
     alignItems: 'center',
     justifyContent: 'space-around',
     paddingHorizontal: 8,
-    paddingVertical: 12,
+    paddingTop: 10,
   },
   button: {
     flexDirection: 'column',

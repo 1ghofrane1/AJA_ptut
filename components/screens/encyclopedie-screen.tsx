@@ -182,7 +182,11 @@ export function EncyclopedieScreen() {
 
   if (selectedSupplement) {
     return (
-      <ScrollView className="flex-1 bg-aja-cream" style={styles.container} contentContainerStyle={styles.contentContainer}>
+      <ScrollView
+        className="flex-1 bg-aja-cream"
+        style={styles.container}
+        contentContainerStyle={[styles.contentContainer, { paddingBottom: insets.bottom + 24 }]}
+      >
         {/* Header */}
         <View
           className="rounded-b-3xl bg-aja-ink px-6 py-6"
@@ -267,7 +271,11 @@ export function EncyclopedieScreen() {
   }
 
   return (
-    <ScrollView className="flex-1 bg-aja-cream" style={styles.container} contentContainerStyle={styles.contentContainer}>
+    <ScrollView
+      className="flex-1 bg-aja-cream"
+      style={styles.container}
+      contentContainerStyle={[styles.contentContainer, { paddingBottom: insets.bottom + 24 }]}
+    >
       {/* Header */}
       <View
         className="rounded-b-3xl bg-aja-ink px-6 py-6"
@@ -436,7 +444,7 @@ const styles = StyleSheet.create({
     backgroundColor: '#fef6e2',
   },
   contentContainer: {
-    paddingBottom: 96,
+    paddingBottom: 24,
   },
   header: {
     backgroundColor: '#14272d',

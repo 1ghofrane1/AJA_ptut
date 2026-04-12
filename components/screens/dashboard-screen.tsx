@@ -177,7 +177,7 @@ export function DashboardScreen({
       <ScrollView
         className="flex-1 bg-aja-cream"
         style={styles.container}
-        contentContainerStyle={styles.contentContainer}
+        contentContainerStyle={[styles.contentContainer, { paddingBottom: insets.bottom + 24 }]}
         showsVerticalScrollIndicator={false}
       >
         <View style={[styles.hero, { paddingTop: insets.top + 14 }]}>
@@ -428,7 +428,7 @@ const styles = StyleSheet.create({
     alignItems: "center",
   },
   contentContainer: {
-    paddingBottom: 104,
+    paddingBottom: 24,
   },
   hero: {
     backgroundColor: "#14272d",
