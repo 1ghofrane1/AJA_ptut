@@ -1,9 +1,11 @@
-const express = require('express');
+﻿const express = require('express');
 const cors = require('cors');
 const bodyParser = require('body-parser');
 
 const app = express();
 const PORT = process.env.PORT || 8000;
+const LEGACY_WARNING =
+  "[legacy-backend] server.js is deprecated. Use d:/ptut/Experta/api.py (FastAPI) as the real backend. Keep this Express server only for isolated UI mock/demo work.";
 
 // Enable CORS for all origins (for development)
 app.use(cors({
@@ -50,11 +52,11 @@ const supplementIntakes = new Map(); // userId -> array of intake records
 const SUPPLEMENT_LIBRARY = [
   {
     id: 'mag_bisgly',
-    name: 'Magnésium Bisglycinate',
+    name: 'MagnÃ©sium Bisglycinate',
     dosage: '300mg',
     timing: 'evening',
-    reason: 'Favorise la relaxation et améliore la qualité du sommeil',
-    molecules: ['Magnésium', 'Glycine'],
+    reason: 'Favorise la relaxation et amÃ©liore la qualitÃ© du sommeil',
+    molecules: ['MagnÃ©sium', 'Glycine'],
     warnings: 'Prendre 30 min avant le coucher',
     goals: ['sleep_support', 'stress_anxiety_support'],
     conditions_avoid: []
@@ -64,19 +66,19 @@ const SUPPLEMENT_LIBRARY = [
     name: 'Vitamine D3',
     dosage: '2000 UI',
     timing: 'morning',
-    reason: 'Renforce le système immunitaire et l\'absorption du calcium',
-    molecules: ['Cholécalciférol'],
+    reason: 'Renforce le systÃ¨me immunitaire et l\'absorption du calcium',
+    molecules: ['CholÃ©calcifÃ©rol'],
     goals: ['immune_support'],
     conditions_avoid: []
   },
   {
     id: 'omega_3',
-    name: 'Oméga-3 EPA/DHA',
+    name: 'OmÃ©ga-3 EPA/DHA',
     dosage: '1000mg',
     timing: 'morning',
-    reason: 'Soutient la santé cardiovasculaire et cognitive',
+    reason: 'Soutient la santÃ© cardiovasculaire et cognitive',
     molecules: ['EPA', 'DHA'],
-    warnings: 'À prendre pendant un repas',
+    warnings: 'Ã€ prendre pendant un repas',
     goals: ['focus_cognition', 'pain_inflammation'],
     conditions_avoid: ['taking_anticoagulants']
   }
@@ -224,7 +226,7 @@ app.post('/auth/signup', (req, res) => {
   const token = generateToken(userId);
   const userResponse = createUserResponse(user);
 
-  console.log(`✅ New user signed up: ${email} (${userId})`);
+  console.log(`âœ… New user signed up: ${email} (${userId})`);
 
   res.status(201).json({
     access_token: token,
@@ -238,24 +240,24 @@ app.post('/auth/login', (req, res) => {
   const { email, password } = req.body;
   const normalizedEmail = normalizeEmail(email);
 
-  console.log(`🔐 Login attempt: ${email}`);
+  console.log(`ðŸ” Login attempt: ${email}`);
 
   if (!email || !password) {
-    console.log(`❌ Login failed: Missing email or password`);
+    console.log(`âŒ Login failed: Missing email or password`);
     return res.status(400).json({ detail: 'Email and password are required' });
   }
 
   // Find user
   const foundUser = findUserByEmail(normalizedEmail);
   if (!foundUser || foundUser.password !== password) {
-    console.log(`❌ Login failed: Invalid credentials for ${email} (user not found or wrong password)`);
+    console.log(`âŒ Login failed: Invalid credentials for ${email} (user not found or wrong password)`);
     return res.status(401).json({ detail: 'Invalid credentials' });
   }
 
   const token = generateToken(foundUser.id);
   const userResponse = createUserResponse(foundUser);
 
-  console.log(`✅ User logged in: ${email} (${foundUser.id})`);
+  console.log(`âœ… User logged in: ${email} (${foundUser.id})`);
 
   res.json({
     access_token: token,
@@ -341,7 +343,7 @@ app.put('/users/me/profile', (req, res) => {
   user.updated_at = new Date().toISOString();
   users.set(userId, user);
 
-  console.log(`✅ Profile updated for: ${user.email} (${userId})`);
+  console.log(`âœ… Profile updated for: ${user.email} (${userId})`);
 
   const userResponse = createUserResponse(user);
   res.json(userResponse);
@@ -461,7 +463,7 @@ app.post('/supplements/intake', (req, res) => {
 
   supplementIntakes.set(userId, userIntakes);
 
-  console.log(`✅ Supplement intake updated: ${user.email} - ${supplement_id} = ${taken}`);
+  console.log(`âœ… Supplement intake updated: ${user.email} - ${supplement_id} = ${taken}`);
 
   res.json({ success: true, taken });
 });
@@ -717,9 +719,10 @@ app.get('/dashboard', (req, res) => {
 
 // Start server
 app.listen(PORT, '0.0.0.0', () => {
-  console.log(`🚀 myAja Mock Backend running on http://0.0.0.0:${PORT}`);
-  console.log(`📡 CORS enabled for frontend development`);
-  console.log(`\n📋 Available endpoints:`);
+  console.warn(LEGACY_WARNING);
+  console.log(`ðŸš€ myAja Mock Backend running on http://0.0.0.0:${PORT}`);
+  console.log(`ðŸ“¡ CORS enabled for frontend development`);
+  console.log(`\nðŸ“‹ Available endpoints:`);
   console.log(`   POST   /auth/signup                    - Create new account`);
   console.log(`   POST   /auth/login                     - Authenticate user`);
   console.log(`   GET    /users/me                       - Get current user`);
@@ -730,5 +733,6 @@ app.listen(PORT, '0.0.0.0', () => {
   console.log(`   POST   /supplements/intake             - Track supplement intake`);
   console.log(`   GET    /tracking/progress              - Get tracking data`);
   console.log(`   GET    /dashboard                      - Get dashboard summary`);
-  console.log(`\n💡 This is a MOCK server for development only!\n`);
+  console.log(`\nðŸ’¡ This is a MOCK server for development only!\n`);
 });
+

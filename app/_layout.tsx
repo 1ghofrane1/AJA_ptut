@@ -9,6 +9,7 @@ import { SuiviScreen } from "@/components/screens/suivi-screen";
 import { WelcomeScreen } from "@/components/screens/welcome-screen";
 import { AuthProvider, useAuth } from "@/context/auth";
 import { type UserResponse } from "@/services/api";
+import { QueryClient, QueryClientProvider } from "@tanstack/react-query";
 import { useEffect, useState } from "react";
 import {
   ActivityIndicator,
@@ -22,7 +23,8 @@ type Screen =
   | "signup"
   | "onboarding"
   | "dashboard"
-  | "goals";
+  | "goals"
+  | "profile";
 
 type Tab = "accueil" | "recommandations" | "suivi" | "encyclopedie";
 
@@ -40,10 +42,27 @@ function needsOnboarding(user: UserResponse | null) {
 }
 
 export default function App() {
+  const [queryClient] = useState(
+    () =>
+      new QueryClient({
+        defaultOptions: {
+          queries: {
+            staleTime: 30_000,
+            gcTime: 5 * 60_000,
+            refetchOnReconnect: true,
+            refetchOnWindowFocus: false,
+            retry: 1,
+          },
+        },
+      }),
+  );
+
   return (
-    <AuthProvider>
-      <RootApp />
-    </AuthProvider>
+    <QueryClientProvider client={queryClient}>
+      <AuthProvider>
+        <RootApp />
+      </AuthProvider>
+    </QueryClientProvider>
   );
 }
 function RootApp() {
@@ -93,7 +112,8 @@ function RootApp() {
     currentScreen === "login" ||
     currentScreen === "signup" ||
     currentScreen === "onboarding" ||
-    currentScreen === "goals"
+    currentScreen === "goals" ||
+    currentScreen === "profile"
   ) {
     return (
       <View className="flex-1 bg-aja-cream" style={styles.container}>
@@ -112,6 +132,9 @@ function RootApp() {
         {currentScreen === "goals" && (
           <OnboardingScreen onNavigate={handleNavigate} mode="goals" />
         )}
+        {currentScreen === "profile" && (
+          <OnboardingScreen onNavigate={handleNavigate} mode="profile" />
+        )}
       </View>
     );
   }
@@ -122,12 +145,14 @@ function RootApp() {
       <View className="flex-1" style={styles.content}>
         {activeTab === "accueil" && (
           <DashboardScreen
-            onAddGoal={() => setCurrentScreen("goals")}
+            onEditProfile={() => setCurrentScreen("profile")}
             onOpenTracking={() => setActiveTab("suivi")}
           />
         )}
         {activeTab === "recommandations" && <RecommendationsScreen />}
-        {activeTab === "suivi" && <SuiviScreen />}
+        {activeTab === "suivi" && (
+          <SuiviScreen onOpenRecommendations={() => setActiveTab("recommandations")} />
+        )}
         {activeTab === "encyclopedie" && <EncyclopedieScreen />}
       </View>
 

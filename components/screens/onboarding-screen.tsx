@@ -56,7 +56,7 @@ import {
 
 interface OnboardingScreenProps {
   onNavigate: (screen: string) => void;
-  mode?: "full" | "goals";
+  mode?: "full" | "goals" | "profile";
 }
 
 type CardIcon = ComponentType<{ size?: number; color?: string }>;
@@ -86,6 +86,8 @@ type FormDataState = {
   diseases: string[];
   allergies: string[];
 };
+
+type ProfileRecord = Record<string, unknown>;
 
 type HeightDisplayUnit = "cm" | "ft";
 type WeightDisplayUnit = "kg" | "lb";
@@ -466,17 +468,96 @@ function formatWeightHelper(value: number | null, unit: WeightDisplayUnit) {
   return `${Math.round(value / 2.20462)} kg`;
 }
 
+function buildInitialFormData(
+  profileInput: unknown,
+  initialGoals: string[],
+): FormDataState {
+  const profile = asProfileRecord(profileInput) ?? {};
+  const personal = asProfileRecord(profile.personal) ?? {};
+  const medical = asProfileRecord(profile.medical) ?? {};
+
+  const existingName =
+    toTrimmedString(personal.name) || toTrimmedString(profile.name);
+  const splitName = splitDisplayName(existingName);
+
+  const firstname =
+    toTrimmedString(personal.first_name) ||
+    toTrimmedString(profile.first_name) ||
+    splitName.firstname;
+  const lastname =
+    toTrimmedString(personal.last_name) ||
+    toTrimmedString(profile.last_name) ||
+    splitName.lastname;
+  const birthdate =
+    normalizeBirthDate(personal.birth_date) ||
+    normalizeBirthDate(profile.birth_date);
+  const storedAgeRange =
+    ageRangeFromApi(personal.age_range) || ageRangeFromApi(profile.age_range);
+  const medications = toStringList(medical.medications);
+  const conditions = toStringList(medical.conditions);
+  const allergies = toStringList(medical.allergies);
+
+  return {
+    firstname,
+    lastname,
+    sex:
+      sexFromApi(personal.sex) ||
+      sexFromApi(personal.gender) ||
+      sexFromApi(profile.gender),
+    pregnancy: booleanOrNull(medical.is_pregnant),
+    breastfeeding: booleanOrNull(medical.is_breastfeeding),
+    birthdate,
+    ageRange: deriveAgeRangeFromBirthdate(birthdate) ?? storedAgeRange,
+    height: toTrimmedString(personal.height_cm),
+    weight: toTrimmedString(personal.weight_kg),
+    activityLevel: toTrimmedString(profile.activity_level),
+    goals: initialGoals,
+    conditions: dedupeStrings([...medications, ...conditions]),
+    diseases: toStringList(medical.diseases),
+    allergies: allergies.length > 0 ? allergies : ["none"],
+  };
+}
+
 function getStepCompletion({
   isGoalsOnly,
+  isProfileEdit,
   step,
   formData,
 }: {
   isGoalsOnly: boolean;
+  isProfileEdit: boolean;
   step: number;
   formData: FormDataState;
 }) {
   if (isGoalsOnly) {
     return formData.goals.length > 0 ? 1 : 0;
+  }
+
+  if (isProfileEdit) {
+    switch (step) {
+      case 1: {
+        const checks = [
+          hasTextValue(formData.activityLevel),
+          formData.goals.length > 0,
+        ];
+        return checks.filter(Boolean).length / checks.length;
+      }
+      case 2: {
+        const checks = [hasTextValue(formData.sex)];
+        if (formData.sex === "Femme") {
+          checks.push(
+            formData.pregnancy !== null,
+            formData.breastfeeding !== null,
+          );
+        }
+        return checks.filter(Boolean).length / checks.length;
+      }
+      case 3:
+      case 4:
+        return 1;
+      default:
+        return 0;
+    }
   }
 
   switch (step) {
@@ -513,7 +594,13 @@ function getStepCompletion({
   }
 }
 
-function getHeroCopy(step: number, isGoalsOnly: boolean) {
+function getHeroCopy(
+  step: number,
+  {
+    isGoalsOnly,
+    isProfileEdit,
+  }: { isGoalsOnly: boolean; isProfileEdit: boolean },
+) {
   if (isGoalsOnly) {
     return {
       eyebrow: "Objectifs",
@@ -521,6 +608,39 @@ function getHeroCopy(step: number, isGoalsOnly: boolean) {
       subtitle:
         "Ajustez vos priorites pour garder des recommandations alignees avec votre quotidien.",
     };
+  }
+
+  if (isProfileEdit) {
+    switch (step) {
+      case 1:
+        return {
+          eyebrow: "Profil sante",
+          title: "Les leviers qui comptent le plus",
+          subtitle:
+            "Objectifs et niveau d activite pilotent directement la pertinence de vos recommandations.",
+        };
+      case 2:
+        return {
+          eyebrow: "Securite",
+          title: "Contexte medical et vigilance",
+          subtitle:
+            "Ajoutez les elements qui peuvent changer les recommandations autorisees.",
+        };
+      case 3:
+        return {
+          eyebrow: "Antecedents",
+          title: "Pathologies et allergies",
+          subtitle:
+            "Gardez un profil fiable pour eviter des suggestions mal adaptees.",
+        };
+      default:
+        return {
+          eyebrow: "Optionnel",
+          title: "Informations personnelles",
+          subtitle:
+            "Ces champs restent modifiables, mais ils ne sont pas le coeur du profil sante.",
+        };
+    }
   }
 
   switch (step) {
@@ -563,12 +683,78 @@ function getHeroCopy(step: number, isGoalsOnly: boolean) {
   }
 }
 
+function asProfileRecord(value: unknown): ProfileRecord | null {
+  if (typeof value !== "object" || value === null || Array.isArray(value)) {
+    return null;
+  }
+  return value as ProfileRecord;
+}
+
+function toTrimmedString(value: unknown) {
+  if (typeof value === "string") return value.trim();
+  if (typeof value === "number" && Number.isFinite(value)) return String(value);
+  return "";
+}
+
+function toStringList(value: unknown) {
+  if (!Array.isArray(value)) return [];
+  return value
+    .filter((item): item is string => typeof item === "string")
+    .map((item) => item.trim())
+    .filter(Boolean);
+}
+
+function splitDisplayName(value: string) {
+  const cleaned = value.trim();
+  if (!cleaned) return { firstname: "", lastname: "" };
+  const parts = cleaned.split(/\s+/);
+  return {
+    firstname: parts[0] ?? "",
+    lastname: parts.slice(1).join(" "),
+  };
+}
+
+function sexFromApi(value: unknown) {
+  const normalized = toTrimmedString(value).toLowerCase();
+  if (normalized === "female" || normalized === "femme") return "Femme";
+  if (normalized === "male" || normalized === "homme") return "Homme";
+  return "";
+}
+
+function ageRangeFromApi(value: unknown) {
+  switch (toTrimmedString(value)) {
+    case "-18":
+      return AGE_RANGE_UNDER_18;
+    case "18-30":
+      return AGE_RANGE_18_TO_30;
+    case "31-45":
+      return AGE_RANGE_31_TO_45;
+    case "46-60":
+      return AGE_RANGE_46_TO_60;
+    case "+60":
+      return AGE_RANGE_OVER_60;
+    default:
+      return "";
+  }
+}
+
+function normalizeBirthDate(value: unknown) {
+  const raw = toTrimmedString(value);
+  return /^\d{4}-\d{2}-\d{2}$/.test(raw) ? raw : "";
+}
+
+function booleanOrNull(value: unknown): boolean | null {
+  return typeof value === "boolean" ? value : null;
+}
+
 function validateOnboardingStep({
   isGoalsOnly,
+  isProfileEdit,
   step,
   formData,
 }: {
   isGoalsOnly: boolean;
+  isProfileEdit: boolean;
   step: number;
   formData: FormDataState;
 }): ValidationResult {
@@ -588,6 +774,52 @@ function validateOnboardingStep({
       };
     }
     return { valid: true };
+  }
+
+  if (isProfileEdit) {
+    switch (step) {
+      case 1:
+        if (!hasText(formData.activityLevel)) {
+          return {
+            valid: false,
+            title: "Activite requise",
+            message: "Choisissez votre niveau d'activite physique.",
+          };
+        }
+        if (formData.goals.length === 0) {
+          return {
+            valid: false,
+            title: "Objectif requis",
+            message: "Choisissez au moins un objectif avant de continuer.",
+          };
+        }
+        return { valid: true };
+      case 2:
+        if (!hasText(formData.sex)) {
+          return {
+            valid: false,
+            title: "Sexe requis",
+            message: "Choisissez une option pour continuer.",
+          };
+        }
+        if (formData.sex === "Femme" && formData.pregnancy === null) {
+          return {
+            valid: false,
+            title: "Reponse requise",
+            message: "Veuillez indiquer si vous etes enceinte.",
+          };
+        }
+        if (formData.sex === "Femme" && formData.breastfeeding === null) {
+          return {
+            valid: false,
+            title: "Reponse requise",
+            message: "Veuillez indiquer si vous allaitez.",
+          };
+        }
+        return { valid: true };
+      default:
+        return { valid: true };
+    }
   }
 
   switch (step) {
@@ -1233,6 +1465,7 @@ export function OnboardingScreen({
   const { width } = useWindowDimensions();
   const isWide = width >= 720;
   const isGoalsOnly = mode === "goals";
+  const isProfileEdit = mode === "profile";
   const initialGoals = useMemo(
     () =>
       Array.isArray(user?.profile?.goals)
@@ -1241,6 +1474,10 @@ export function OnboardingScreen({
           )
         : [],
     [user?.profile?.goals],
+  );
+  const initialFormData = useMemo(
+    () => buildInitialFormData(user?.profile, initialGoals as string[]),
+    [initialGoals, user?.profile],
   );
   const [goalOptions, setGoalOptions] = useState<Option[]>(
     GOAL_FALLBACK_OPTIONS,
@@ -1252,22 +1489,7 @@ export function OnboardingScreen({
   const [weightUnit, setWeightUnit] = useState<WeightDisplayUnit>("kg");
 
   const [step, setStep] = useState(isGoalsOnly ? 4 : 1);
-  const [formData, setFormData] = useState<FormDataState>({
-    firstname: "",
-    lastname: "",
-    sex: "",
-    pregnancy: null,
-    breastfeeding: null,
-    birthdate: "",
-    ageRange: "",
-    height: "",
-    weight: "",
-    activityLevel: "",
-    goals: initialGoals as string[],
-    conditions: [] as string[],
-    diseases: [] as string[],
-    allergies: ["none"] as string[],
-  });
+  const [formData, setFormData] = useState<FormDataState>(initialFormData);
 
   useEffect(() => {
     let isMounted = true;
@@ -1302,17 +1524,18 @@ export function OnboardingScreen({
   // Dynamic total steps: 5 for men, 6 for women (adds pregnancy/breastfeeding step)
   function getDisplayStep() {
     if (isGoalsOnly) return 1;
+    if (isProfileEdit) return step;
     if (formData.sex === "Homme" && step >= 3) {
       return step - 1; // Adjust display for skipped step
     }
     return step;
   }
 
-  const totalSteps = isGoalsOnly ? 1 : formData.sex === "Femme" ? 6 : 5;
+  const totalSteps = isGoalsOnly ? 1 : isProfileEdit ? 4 : formData.sex === "Femme" ? 6 : 5;
   const displayStep = getDisplayStep();
   const currentStepCompletion = useMemo(
-    () => getStepCompletion({ isGoalsOnly, step, formData }),
-    [formData, isGoalsOnly, step],
+    () => getStepCompletion({ isGoalsOnly, isProfileEdit, step, formData }),
+    [formData, isGoalsOnly, isProfileEdit, step],
   );
   const progress =
     totalSteps > 0
@@ -1320,8 +1543,8 @@ export function OnboardingScreen({
       : 0;
   const animatedProgress = useRef(new Animated.Value(progress)).current;
   const hero = useMemo(
-    () => getHeroCopy(step, isGoalsOnly),
-    [isGoalsOnly, step],
+    () => getHeroCopy(step, { isGoalsOnly, isProfileEdit }),
+    [isGoalsOnly, isProfileEdit, step],
   );
   const derivedAgeRange = useMemo(
     () => deriveAgeRangeFromBirthdate(formData.birthdate),
@@ -1384,6 +1607,10 @@ export function OnboardingScreen({
   };
   const ctaLabel = isGoalsOnly
     ? "Enregistrer mes objectifs"
+    : isProfileEdit
+      ? step === totalSteps
+        ? "Enregistrer mon profil sante"
+        : "Continuer"
     : step === totalSteps
       ? "Valider et acceder a mon espace"
       : "Continuer";
@@ -1416,6 +1643,9 @@ export function OnboardingScreen({
 
     const payload = {
       personal: {
+        first_name: formData.firstname.trim() || undefined,
+        last_name: formData.lastname.trim() || undefined,
+        birth_date: formData.birthdate || undefined,
         age_range:
           ageRangeToApi(derivedAgeRange ?? formData.ageRange) ?? undefined,
         name: `${formData.firstname} ${formData.lastname}`.trim() || undefined,
@@ -1489,6 +1719,7 @@ export function OnboardingScreen({
   const handleNext = () => {
     const validation = validateOnboardingStep({
       isGoalsOnly,
+      isProfileEdit,
       step,
       formData,
     });
@@ -1500,6 +1731,15 @@ export function OnboardingScreen({
 
     if (isGoalsOnly) {
       void handleSubmitGoalsOnly();
+      return;
+    }
+
+    if (isProfileEdit) {
+      if (step < totalSteps) {
+        setStep(step + 1);
+      } else {
+        void handleSubmitProfile();
+      }
       return;
     }
 
@@ -1515,8 +1755,13 @@ export function OnboardingScreen({
   };
 
   const handleBack = () => {
-    if (isGoalsOnly) {
+    if (isGoalsOnly || (isProfileEdit && step === 1)) {
       onNavigate("dashboard");
+      return;
+    }
+
+    if (isProfileEdit) {
+      setStep(step - 1);
       return;
     }
 
@@ -1566,20 +1811,13 @@ export function OnboardingScreen({
           onPress={handleBack}
           style={[
             styles.backButton,
-            !isGoalsOnly && step === 1 && styles.backButtonHidden,
+            !isGoalsOnly && !isProfileEdit && step === 1 && styles.backButtonHidden,
           ]}
-          disabled={saving || (!isGoalsOnly && step === 1)}
+          disabled={saving || (!isGoalsOnly && !isProfileEdit && step === 1)}
           activeOpacity={0.85}
         >
           <ArrowLeft size={22} color="#14272d" />
         </TouchableOpacity>
-
-        <View style={styles.brandChip}>
-          <Image
-            source={require("@/assets/images/logo aja 1.png")}
-            style={styles.brandLogo}
-          />
-        </View>
       </View>
 
       <View style={styles.headerIntro}>
@@ -1604,7 +1842,11 @@ export function OnboardingScreen({
             </View>
             <View style={styles.heroBadge}>
               <Text style={styles.heroBadgeText}>
-                {isGoalsOnly ? "Objectifs" : `Etape ${displayStep}/${totalSteps}`}
+                {isGoalsOnly
+                  ? "Objectifs"
+                  : isProfileEdit
+                    ? `Profil ${displayStep}/${totalSteps}`
+                    : `Etape ${displayStep}/${totalSteps}`}
               </Text>
             </View>
           </View>
@@ -1620,7 +1862,9 @@ export function OnboardingScreen({
               <Text style={styles.heroProgressHint}>
                 {Math.round(progress) === 0
                   ? "Renseignez vos premieres informations pour commencer."
-                  : `Votre profil prend forme, etape ${displayStep} sur ${totalSteps}.`}
+                  : isProfileEdit
+                    ? `Vos recommandations resteront alignees, etape ${displayStep} sur ${totalSteps}.`
+                    : `Votre profil prend forme, etape ${displayStep} sur ${totalSteps}.`}
               </Text>
             </View>
             <View style={styles.heroMiniCard}>
@@ -1650,8 +1894,436 @@ export function OnboardingScreen({
         style={styles.scrollView}
         contentContainerStyle={styles.scrollContent}
       >
+        {isProfileEdit && step === 1 && (
+          <SectionFrame
+            icon={Target}
+            title="Priorites qui pilotent vos recommandations"
+            subtitle="Mettez a jour d abord vos objectifs et votre rythme de vie."
+            badge="Requis"
+            countLabel={`${formData.goals.length} objectif${formData.goals.length > 1 ? "s" : ""}`}
+          >
+            <View style={styles.choiceBlock}>
+              <View style={styles.choiceBlockHeader}>
+                <Text style={styles.choiceBlockTitle}>Niveau d activite</Text>
+                <Text style={styles.choiceBlockHint}>Requis</Text>
+              </View>
+              <View style={[styles.choiceGrid, isWide && styles.choiceGridTwo]}>
+                {MODERN_ACTIVITY_LEVELS.map((activity) => {
+                  const meta = getActivityMeta(activity.value);
+                  const Icon = activity.icon ?? meta.icon ?? Activity;
+                  return (
+                    <View
+                      key={`profile-activity-${activity.value}`}
+                      style={[styles.choiceGridItem, isWide && styles.choiceGridItemTwo]}
+                    >
+                      <ChoiceCard
+                        icon={Icon}
+                        title={activity.label}
+                        description={activity.description}
+                        selected={formData.activityLevel === activity.value}
+                        onPress={() =>
+                          setFormData({
+                            ...formData,
+                            activityLevel: activity.value,
+                          })
+                        }
+                        accent={activity.accent ?? meta.accent}
+                        trailing={<ActivityScale intensity={meta.intensity ?? 1} />}
+                      />
+                    </View>
+                  );
+                })}
+              </View>
+            </View>
+
+            <View style={styles.choiceBlock}>
+              <View style={styles.choiceBlockHeader}>
+                <Text style={styles.choiceBlockTitle}>Objectifs prioritaires</Text>
+                <Text style={styles.choiceBlockHint}>Requis</Text>
+              </View>
+              <View style={[styles.choiceGrid, isWide && styles.choiceGridTwo]}>
+                {goalOptions.map((goal) => {
+                  const meta = getGoalMeta(goal.value);
+                  const Icon = goal.icon ?? meta.icon ?? Target;
+                  return (
+                    <View
+                      key={`profile-goal-${goal.value}`}
+                      style={[styles.choiceGridItem, isWide && styles.choiceGridItemTwo]}
+                    >
+                      <ChoiceCard
+                        icon={Icon}
+                        title={goal.label}
+                        description={goal.description ?? meta.description}
+                        selected={formData.goals.includes(goal.value)}
+                        onPress={() => toggleMultiSelection("goals", goal.value)}
+                        accent={goal.accent ?? meta.accent}
+                      />
+                    </View>
+                  );
+                })}
+              </View>
+            </View>
+          </SectionFrame>
+        )}
+
+        {isProfileEdit && step === 2 && (
+          <SectionFrame
+            icon={Shield}
+            title="Contexte medical et securite"
+            subtitle="Ces informations evitent des suggestions mal adaptees."
+            badge="Requis"
+            countLabel={`${formData.conditions.length} vigilance${formData.conditions.length > 1 ? "s" : ""}`}
+          >
+            <View style={styles.choiceBlock}>
+              <View style={styles.choiceBlockHeader}>
+                <Text style={styles.choiceBlockTitle}>Sexe</Text>
+                <Text style={styles.choiceBlockHint}>Requis</Text>
+              </View>
+              <View style={styles.genderSymbolRow}>
+                {MODERN_SEX_OPTIONS.map((option) => {
+                  const Icon = option.icon ?? Venus;
+                  return (
+                    <View key={`profile-sex-${option.value}`} style={styles.genderSymbolItem}>
+                      <GenderSymbolCard
+                        icon={Icon}
+                        label={option.label}
+                        selected={formData.sex === option.value}
+                        onPress={() =>
+                          setFormData((prev) => ({
+                            ...prev,
+                            sex: option.value,
+                            ...(option.value !== "Femme"
+                              ? { pregnancy: false, breastfeeding: false }
+                              : {}),
+                          }))
+                        }
+                        accent={option.accent}
+                      />
+                    </View>
+                  );
+                })}
+              </View>
+            </View>
+
+            {formData.sex === "Femme" ? (
+              <View style={styles.questionStack}>
+                <View style={styles.questionCard}>
+                  <View style={styles.choiceBlockHeader}>
+                    <Text style={styles.choiceBlockTitle}>Etes-vous enceinte ?</Text>
+                    <Text style={styles.choiceBlockHint}>Requis</Text>
+                  </View>
+                  <View style={[styles.choiceGrid, isWide && styles.choiceGridTwo]}>
+                    <View style={[styles.choiceGridItem, isWide && styles.choiceGridItemTwo]}>
+                      <ChoiceCard
+                        icon={CheckCircle2}
+                        title="Oui"
+                        description="Je suis enceinte"
+                        selected={formData.pregnancy === true}
+                        onPress={() => setFormData({ ...formData, pregnancy: true })}
+                        accent="#7ea69d"
+                        compact
+                      />
+                    </View>
+                    <View style={[styles.choiceGridItem, isWide && styles.choiceGridItemTwo]}>
+                      <ChoiceCard
+                        icon={XCircle}
+                        title="Non"
+                        description="Pas concernee"
+                        selected={formData.pregnancy === false}
+                        onPress={() => setFormData({ ...formData, pregnancy: false })}
+                        accent="#d9a86c"
+                        compact
+                      />
+                    </View>
+                  </View>
+                </View>
+
+                <View style={styles.questionCard}>
+                  <View style={styles.choiceBlockHeader}>
+                    <Text style={styles.choiceBlockTitle}>Allaitez-vous actuellement ?</Text>
+                    <Text style={styles.choiceBlockHint}>Requis</Text>
+                  </View>
+                  <View style={[styles.choiceGrid, isWide && styles.choiceGridTwo]}>
+                    <View style={[styles.choiceGridItem, isWide && styles.choiceGridItemTwo]}>
+                      <ChoiceCard
+                        icon={CheckCircle2}
+                        title="Oui"
+                        description="Je donne actuellement le sein"
+                        selected={formData.breastfeeding === true}
+                        onPress={() => setFormData({ ...formData, breastfeeding: true })}
+                        accent="#7ea69d"
+                        compact
+                      />
+                    </View>
+                    <View style={[styles.choiceGridItem, isWide && styles.choiceGridItemTwo]}>
+                      <ChoiceCard
+                        icon={XCircle}
+                        title="Non"
+                        description="Pas concernee"
+                        selected={formData.breastfeeding === false}
+                        onPress={() => setFormData({ ...formData, breastfeeding: false })}
+                        accent="#d9a86c"
+                        compact
+                      />
+                    </View>
+                  </View>
+                </View>
+              </View>
+            ) : null}
+
+            <View style={styles.groupCard}>
+              <View style={styles.groupHeader}>
+                <View style={styles.groupTitleRow}>
+                  <Pill size={18} color="#7ea69d" />
+                  <Text style={styles.groupTitle}>Medicaments</Text>
+                </View>
+              </View>
+              <View style={styles.chipWrap}>
+                {MEDICATION_CONDITIONS.map((option) => (
+                  <ChipCard
+                    key={`profile-med-${option.value}`}
+                    label={option.label}
+                    selected={formData.conditions.includes(option.value)}
+                    onPress={() => toggleMultiSelection("conditions", option.value)}
+                  />
+                ))}
+              </View>
+            </View>
+
+            <View style={styles.groupCard}>
+              <View style={styles.groupHeader}>
+                <View style={styles.groupTitleRow}>
+                  <Heart size={18} color="#7ea69d" />
+                  <Text style={styles.groupTitle}>Conditions de sante</Text>
+                </View>
+              </View>
+              <View style={styles.chipWrap}>
+                {HEALTH_CONDITIONS.map((option) => (
+                  <ChipCard
+                    key={`profile-condition-${option.value}`}
+                    label={option.label}
+                    selected={formData.conditions.includes(option.value)}
+                    onPress={() => toggleMultiSelection("conditions", option.value)}
+                  />
+                ))}
+              </View>
+            </View>
+
+            <TouchableOpacity
+              onPress={() => setFormData({ ...formData, conditions: [] })}
+              style={[
+                styles.noneButton,
+                formData.conditions.length === 0 && styles.noneButtonSelected,
+              ]}
+              disabled={saving}
+              activeOpacity={0.88}
+            >
+              <Text
+                style={[
+                  styles.noneButtonText,
+                  formData.conditions.length === 0 && styles.noneButtonTextSelected,
+                ]}
+              >
+                Rien a signaler pour le moment
+              </Text>
+            </TouchableOpacity>
+          </SectionFrame>
+        )}
+
+        {isProfileEdit && step === 3 && (
+          <SectionFrame
+            icon={Heart}
+            title="Antecedents et allergies"
+            subtitle="Ces informations restent optionnelles mais utiles pour la tolerance."
+            badge="Optionnel"
+            countLabel={`${
+              formData.diseases.length +
+              (formData.allergies.includes("none") ? 0 : formData.allergies.length)
+            } element${formData.diseases.length + (formData.allergies.includes("none") ? 0 : formData.allergies.length) > 1 ? "s" : ""}`}
+          >
+            <View style={styles.groupCard}>
+              <View style={styles.groupHeader}>
+                <View style={styles.groupTitleRow}>
+                  <Heart size={18} color="#7ea69d" />
+                  <Text style={styles.groupTitle}>Pathologies diagnostiquees</Text>
+                </View>
+              </View>
+              <View style={styles.chipWrap}>
+                {DISEASES.map((option) => (
+                  <ChipCard
+                    key={`profile-disease-${option.value}`}
+                    label={option.label}
+                    selected={formData.diseases.includes(option.value)}
+                    onPress={() => toggleMultiSelection("diseases", option.value)}
+                  />
+                ))}
+              </View>
+            </View>
+
+            <View style={styles.groupCard}>
+              <View style={styles.groupHeader}>
+                <View style={styles.groupTitleRow}>
+                  <AlertCircle size={18} color="#7ea69d" />
+                  <Text style={styles.groupTitle}>Allergies</Text>
+                </View>
+              </View>
+              <View style={styles.chipWrap}>
+                {ALLERGIES.map((option) => (
+                  <ChipCard
+                    key={`profile-allergy-${option.value}`}
+                    label={option.label}
+                    selected={formData.allergies.includes(option.value)}
+                    onPress={() =>
+                      toggleMultiSelection("allergies", option.value, "none")
+                    }
+                  />
+                ))}
+              </View>
+            </View>
+          </SectionFrame>
+        )}
+
+        {isProfileEdit && step === 4 && (
+          <SectionFrame
+            icon={User}
+            title="Informations personnelles"
+            subtitle="Accessibles ici si vous souhaitez aussi ajuster votre fiche personnelle."
+            badge="Optionnel"
+          >
+            <View style={styles.helperCard}>
+              <Text style={styles.helperText}>
+                Ces donnees restent secondaires par rapport aux objectifs, a l activite et au contexte medical.
+              </Text>
+            </View>
+
+            <FormField
+              label="Prenom"
+              icon={User}
+              value={formData.firstname}
+              onChangeText={(text) =>
+                setFormData({ ...formData, firstname: text })
+              }
+              placeholder="Votre prenom"
+              focused={focusedField === "firstname"}
+              onFocus={() => setFocusedField("firstname")}
+              onBlur={() => setFocusedField(null)}
+              autoCapitalize="words"
+            />
+
+            <FormField
+              label="Nom"
+              icon={User}
+              value={formData.lastname}
+              onChangeText={(text) =>
+                setFormData({ ...formData, lastname: text })
+              }
+              placeholder="Votre nom"
+              focused={focusedField === "lastname"}
+              onFocus={() => setFocusedField("lastname")}
+              onBlur={() => setFocusedField(null)}
+              autoCapitalize="words"
+            />
+
+            <View style={styles.choiceBlock}>
+              <View style={styles.choiceBlockHeader}>
+                <Text style={styles.choiceBlockTitle}>Date de naissance</Text>
+                <Text style={styles.choiceBlockHint}>Optionnel</Text>
+              </View>
+              <TouchableOpacity
+                onPress={() => setBirthdatePickerOpen((prev) => !prev)}
+                activeOpacity={0.9}
+                style={[
+                  styles.birthdateTrigger,
+                  birthdatePickerOpen && styles.birthdateTriggerActive,
+                ]}
+              >
+                <View style={styles.fieldIconWrap}>
+                  <CalendarDays size={18} color="#7ea69d" />
+                </View>
+                <View style={styles.birthdateTriggerCopy}>
+                  <Text style={styles.birthdateTriggerValue}>
+                    {formatBirthdateDisplay(formData.birthdate)}
+                  </Text>
+                  <Text style={styles.birthdateTriggerHint}>
+                    {derivedAgeRange && derivedAge !== null
+                      ? `${derivedAge} ans | ${derivedAgeRange}`
+                      : formData.ageRange
+                        ? formData.ageRange
+                        : "Touchez pour choisir votre date de naissance"}
+                  </Text>
+                </View>
+                <View
+                  style={[
+                    styles.birthdateChevron,
+                    birthdatePickerOpen && styles.birthdateChevronOpen,
+                  ]}
+                >
+                  <ChevronDown size={18} color="#7ea69d" />
+                </View>
+              </TouchableOpacity>
+
+              {birthdatePickerOpen ? (
+                <BirthdateWheelPicker
+                  value={formData.birthdate}
+                  onChange={setBirthdateValue}
+                />
+              ) : null}
+            </View>
+
+            <View style={[styles.metricRow, isWide && styles.metricRowWide]}>
+              <View style={[styles.metricItem, isWide && styles.metricItemWide]}>
+                <MetricRulerCard
+                  label="Taille"
+                  icon={Activity}
+                  accent="#7ea69d"
+                  unitOptions={[
+                    { key: "cm", label: "Cm" },
+                    { key: "ft", label: "Feet" },
+                  ]}
+                  activeUnit={heightUnit}
+                  onChangeUnit={(nextUnit) =>
+                    setHeightUnit(nextUnit as HeightDisplayUnit)
+                  }
+                  selectedValue={displayedHeightValue}
+                  displayValue={formatHeightDisplay(displayedHeightValue, heightUnit)}
+                  helperValue={formatHeightHelper(displayedHeightValue, heightUnit)}
+                  values={heightUnit === "cm" ? HEIGHT_CM_VALUES : HEIGHT_IN_VALUES}
+                  onSelectValue={setHeightFromDisplay}
+                  getTickLabel={(value) => {
+                    if (heightUnit === "cm") {
+                      return value % 5 === 0 ? String(value) : "";
+                    }
+                    return value % 6 === 0 ? formatFeetAndInches(value) : "";
+                  }}
+                />
+              </View>
+              <View style={[styles.metricItem, isWide && styles.metricItemWide]}>
+                <MetricRulerCard
+                  label="Poids"
+                  icon={Weight}
+                  accent="#6e75c9"
+                  unitOptions={[
+                    { key: "kg", label: "Kg" },
+                    { key: "lb", label: "Pound" },
+                  ]}
+                  activeUnit={weightUnit}
+                  onChangeUnit={(nextUnit) =>
+                    setWeightUnit(nextUnit as WeightDisplayUnit)
+                  }
+                  selectedValue={displayedWeightValue}
+                  displayValue={formatWeightDisplay(displayedWeightValue, weightUnit)}
+                  helperValue={formatWeightHelper(displayedWeightValue, weightUnit)}
+                  values={weightUnit === "kg" ? WEIGHT_KG_VALUES : WEIGHT_LB_VALUES}
+                  onSelectValue={setWeightFromDisplay}
+                  getTickLabel={(value) => (value % 5 === 0 ? String(value) : "")}
+                />
+              </View>
+            </View>
+          </SectionFrame>
+        )}
+
                 {/* STEP 1: PROFILE INFORMATION */}
-        {step === 1 && (
+        {!isProfileEdit && step === 1 && (
           <SectionFrame
             icon={User}
             title="Commencons par l'essentiel"
@@ -1812,7 +2484,7 @@ export function OnboardingScreen({
         )}
 
                 {/* STEP 2: PREGNANCY & BREASTFEEDING (Women only) */}
-        {step === 2 && formData.sex === "Femme" && (
+        {!isProfileEdit && step === 2 && formData.sex === "Femme" && (
           <SectionFrame
             icon={Baby}
             title="Situation actuelle"
@@ -1822,7 +2494,7 @@ export function OnboardingScreen({
             <View style={styles.questionStack}>
               <View style={styles.questionCard}>
                 <View style={styles.choiceBlockHeader}>
-                  <Text style={styles.choiceBlockTitle}>Etes-vous enceinte ?</Text>
+                  <Text style={styles.choiceBlockTitle}>Allaitez-vous actuellement ?</Text>
                   <Text style={styles.choiceBlockHint}>Requis</Text>
                 </View>
                 <View style={[styles.choiceGrid, isWide && styles.choiceGridTwo]}>
@@ -1900,7 +2572,7 @@ export function OnboardingScreen({
         )}
 
                 {/* STEP 3 (or 2 for men): ACTIVITY LEVEL */}
-        {step === 3 && (
+        {!isProfileEdit && step === 3 && (
           <SectionFrame
             icon={Activity}
             title="Niveau d'activite physique"
@@ -1938,7 +2610,7 @@ export function OnboardingScreen({
         )}
 
                 {/* STEP 4 (or 3 for men): GOALS */}
-        {step === 4 && (
+        {!isProfileEdit && step === 4 && (
           <SectionFrame
             icon={Target}
             title="Quels sont vos objectifs ?"
@@ -1971,7 +2643,7 @@ export function OnboardingScreen({
         )}
 
                 {/* STEP 5 (or 4 for men): CONDITIONS - REORGANIZED */}
-        {step === 5 && (
+        {!isProfileEdit && step === 5 && (
           <SectionFrame
             icon={Shield}
             title="Precautions medicales"
@@ -2046,7 +2718,7 @@ export function OnboardingScreen({
         )}
 
                 {/* STEP 6 (or 5 for men): DISEASES */}
-        {step === 6 && (
+        {!isProfileEdit && step === 6 && (
           <SectionFrame
             icon={Heart}
             title="Pathologies diagnostiquees"
@@ -2429,7 +3101,7 @@ const styles = StyleSheet.create({
   topRow: {
     flexDirection: "row",
     alignItems: "center",
-    justifyContent: "space-between",
+    justifyContent: "flex-start",
     marginBottom: 12,
     gap: 12,
   },
@@ -2447,26 +3119,6 @@ const styles = StyleSheet.create({
     fontWeight: "700",
     color: "#7ea69d",
     letterSpacing: 0.4,
-  },
-  brandChip: {
-    width: 44,
-    height: 44,
-    borderRadius: 16,
-    borderWidth: 1,
-    borderColor: "rgba(20,39,45,0.08)",
-    backgroundColor: "rgba(255,255,255,0.9)",
-    alignItems: "center",
-    justifyContent: "center",
-    overflow: "hidden",
-    shadowColor: "#17363a",
-    shadowOffset: { width: 0, height: 6 },
-    shadowOpacity: 0.08,
-    shadowRadius: 12,
-    elevation: 3,
-  },
-  brandLogo: {
-    width: 30,
-    height: 30,
   },
   headerIntro: {
     marginBottom: 16,
@@ -2599,10 +3251,10 @@ const styles = StyleSheet.create({
     position: "relative",
     overflow: "hidden",
     borderRadius: 30,
-    paddingTop: 18,
+    paddingTop: 14,
     paddingHorizontal: 18,
-    paddingBottom: 20,
-    minHeight: 220,
+    paddingBottom: 16,
+    minHeight: 190,
     borderWidth: 1,
     borderColor: "rgba(255,255,255,0.12)",
     shadowColor: "#17363a",
@@ -2613,13 +3265,13 @@ const styles = StyleSheet.create({
   },
   heroCardWide: {
     paddingHorizontal: 22,
-    paddingTop: 20,
-    paddingBottom: 22,
+    paddingTop: 16,
+    paddingBottom: 18,
   },
   heroContent: {
-    gap: 10,
-    paddingRight: 56,
-    marginBottom: 18,
+    gap: 8,
+    paddingRight: 52,
+    marginBottom: 12,
     zIndex: 2,
   },
   heroTopRow: {
@@ -2627,7 +3279,7 @@ const styles = StyleSheet.create({
     alignItems: "center",
     justifyContent: "space-between",
     gap: 12,
-    marginBottom: 18,
+    marginBottom: 12,
     zIndex: 2,
   },
   heroEyebrow: {
@@ -2645,16 +3297,16 @@ const styles = StyleSheet.create({
     textTransform: "uppercase",
   },
   heroTitle: {
-    fontSize: 34,
-    lineHeight: 38,
+    fontSize: 30,
+    lineHeight: 34,
     fontWeight: "800",
     color: "#ffffff",
     letterSpacing: -0.9,
   },
   heroSubtitle: {
     maxWidth: 520,
-    fontSize: 14,
-    lineHeight: 22,
+    fontSize: 13,
+    lineHeight: 20,
     color: "rgba(255,255,255,0.84)",
   },
   heroBadge: {
@@ -2671,16 +3323,16 @@ const styles = StyleSheet.create({
     fontWeight: "700",
   },
   heroLogo: {
-    width: 44,
-    height: 44,
+    width: 38,
+    height: 38,
   },
   heroLogoHalo: {
     position: "absolute",
-    right: -10,
-    top: -8,
-    width: 118,
-    height: 118,
-    borderRadius: 59,
+    right: -8,
+    top: -10,
+    width: 96,
+    height: 96,
+    borderRadius: 48,
     backgroundColor: "rgba(255,255,255,0.08)",
     alignItems: "center",
     justifyContent: "center",
@@ -2689,28 +3341,28 @@ const styles = StyleSheet.create({
   },
   heroGlowOne: {
     position: "absolute",
-    width: 150,
-    height: 150,
+    width: 132,
+    height: 132,
     borderRadius: 999,
     backgroundColor: "rgba(246, 219, 160, 0.14)",
-    top: -56,
-    right: 18,
+    top: -50,
+    right: 12,
   },
   heroGlowTwo: {
     position: "absolute",
-    width: 124,
-    height: 124,
+    width: 106,
+    height: 106,
     borderRadius: 999,
     backgroundColor: "rgba(255,255,255,0.08)",
-    bottom: -48,
-    left: -18,
+    bottom: -42,
+    left: -14,
   },
   heroProgressRow: {
     flexDirection: "row",
     alignItems: "flex-end",
     justifyContent: "space-between",
     gap: 14,
-    marginBottom: 14,
+    marginBottom: 10,
     zIndex: 2,
   },
   heroProgressCopy: {
@@ -2724,16 +3376,16 @@ const styles = StyleSheet.create({
     color: "#ffffff",
   },
   heroProgressHint: {
-    fontSize: 12,
-    lineHeight: 18,
+    fontSize: 11,
+    lineHeight: 16,
     color: "rgba(255,255,255,0.74)",
   },
   heroMiniCard: {
-    minWidth: 96,
-    borderRadius: 18,
+    minWidth: 84,
+    borderRadius: 16,
     backgroundColor: "rgba(255,255,255,0.14)",
-    paddingVertical: 10,
-    paddingHorizontal: 12,
+    paddingVertical: 8,
+    paddingHorizontal: 10,
     borderWidth: 1,
     borderColor: "rgba(255,255,255,0.12)",
     alignItems: "center",
@@ -2745,7 +3397,7 @@ const styles = StyleSheet.create({
   },
   heroMiniValue: {
     color: "#ffffff",
-    fontSize: 16,
+    fontSize: 15,
     fontWeight: "800",
     marginTop: 2,
   },

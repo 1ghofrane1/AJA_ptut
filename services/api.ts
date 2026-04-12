@@ -26,10 +26,54 @@ export type UserResponse = {
   id: string;
   email: string;
   role: string;
-  profile: any;
+  profile: UserProfile;
   created_at: string;
   updated_at: string;
 };
+
+export type ApiObject = Record<string, unknown>;
+
+export type UserPersonalProfile = ApiObject & {
+  first_name?: string;
+  last_name?: string;
+  name?: string;
+  birth_date?: string;
+  age_range?: string;
+  gender?: string;
+  sex?: string;
+  height_cm?: number;
+  weight_kg?: number;
+};
+
+export type UserMedicalProfile = ApiObject & {
+  is_pregnant?: boolean;
+  is_breastfeeding?: boolean;
+  conditions?: string[];
+  diseases?: string[];
+  medications?: string[];
+  allergies?: string[];
+};
+
+export type UserProfile = {
+  first_name?: string;
+  last_name?: string;
+  name?: string;
+  birth_date?: string;
+  age_range?: string;
+  gender?: string;
+  activity_level?: string;
+  goals?: string[];
+  allergies?: string[];
+  medical_conditions?: string[];
+  dietary_preferences?: string[];
+  pregnant?: boolean;
+  breastfeeding?: boolean;
+  personal?: UserPersonalProfile;
+  medical?: UserMedicalProfile;
+  [key: string]: unknown;
+};
+
+export type UserProfileUpdatePayload = Partial<UserProfile> & ApiObject;
 
 export type TokenResponse = {
   access_token: string;
@@ -45,10 +89,10 @@ export type EmailAvailabilityResponse = {
 };
 
 export type DecideMeResponse = {
-  derived_input?: Record<string, any>;
-  input?: Record<string, any>;
-  decision?: Record<string, any>;
-  [key: string]: any;
+  derived_input?: ApiObject;
+  input?: ApiObject;
+  decision?: ApiObject;
+  [key: string]: unknown;
 };
 
 export type GoalOptionResponse = {
@@ -60,9 +104,20 @@ export type RecommendationResponse = {
   id: string;
   user_id: string;
   source: string;
-  input: Record<string, any>;
-  decision: Record<string, any>;
+  input: ApiObject;
+  decision: ApiObject;
   created_at: string;
+};
+
+export type CurrentRecommendationSnapshotResponse = {
+  user_id: string;
+  source?: string | null;
+  input: ApiObject;
+  derived_input: ApiObject;
+  decision: ApiObject;
+  saved_recommendation_id?: string | null;
+  saved_at?: string | null;
+  intakes: RecommendationIntakeResponse[];
 };
 
 export type RecommendationIntakeResponse = {
@@ -91,7 +146,7 @@ export type RecommendationIntakesBulkResponse = {
   recommendation_id: string;
   saved_count: number;
   intakes: RecommendationIntakeResponse[];
-  decision: Record<string, any>;
+  decision: ApiObject;
 };
 
 export async function signup(email: string, password: string) {
@@ -124,7 +179,7 @@ export async function getMe(includePersonal = true) {
   return data;
 }
 
-export async function updateMyProfile(payload: any) {
+export async function updateMyProfile(payload: UserProfileUpdatePayload) {
   const { data } = await api.put<UserResponse>("/users/me/profile", payload);
   return data;
 }
@@ -149,6 +204,13 @@ export async function getMyRecommendations(limit = 20) {
 export async function getMyRecommendation(recommendationId: string) {
   const { data } = await api.get<RecommendationResponse>(
     `/users/me/recommendations/${recommendationId}`,
+  );
+  return data;
+}
+
+export async function getCurrentRecommendationSnapshot() {
+  const { data } = await api.get<CurrentRecommendationSnapshotResponse>(
+    "/users/me/current-recommendation",
   );
   return data;
 }
@@ -219,6 +281,7 @@ export type ProgressResponse = {
   supplements_taken?: number;
   supplements_total?: number;
   weekly_data: { day: string; completed: boolean }[];
+  weekly_completion_data?: { day: string; ymd: string; percent: number }[];
   adherence_data: boolean[];
   evolution_data: { day: number; value: number }[];
   monthly_data: { day: number; intensity: number }[];

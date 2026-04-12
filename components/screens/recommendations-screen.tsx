@@ -1,11 +1,23 @@
 import { HeaderLogoutButton } from "@/components/header-logout-button";
 import { useAuth } from "@/context/auth";
 import {
-  getDecisionForMe,
-  getMyRecommendations,
-  getRecommendationIntakes,
-  saveRecommendationIntakes,
-  type RecommendationResponse,
+  useCurrentRecommendationSnapshotQuery,
+  useProgressQuery,
+  useSaveRecommendationIntakesMutation,
+} from "@/hooks/use-health-data";
+import {
+  formatParisDateTime,
+  formatParisTime,
+  formatParisYmd,
+  getCurrentParisTimestamp,
+} from "@/utils/paris-time";
+import {
+  buildBulkIntakePayload,
+  buildTakenByGroupId,
+  buildTakenBySupplementId,
+} from "@/utils/progress-sync";
+import {
+  type ProgressResponse,
   type RecommendationIntakeResponse,
 } from "@/services/api";
 import {
@@ -45,10 +57,6 @@ type ObjectivePlan = {
   key: string;
   label: string;
   supplements: Supplement[];
-};
-
-type SupplementStatus = Supplement & {
-  isTaken: boolean;
 };
 
 type SupplementHistoryEntry = {
@@ -257,13 +265,6 @@ function mapRawRecommendationToSupplement(
       raw.label,
     ) ?? `Recommandation ${index + 1}`;
 
-  const scoreValue =
-    typeof raw.score === "number"
-      ? raw.score
-      : typeof raw.score === "string" && raw.score.trim()
-        ? raw.score.trim()
-        : null;
-
   const dosage =
     firstString(
       raw.posologie,
@@ -271,7 +272,7 @@ function mapRawRecommendationToSupplement(
       raw.dose,
       raw.quantity,
       raw.quantite,
-    ) ?? (scoreValue !== null ? `Score: ${scoreValue}` : "A definir");
+    ) ?? "A definir";
 
   const reason =
     firstString(
@@ -467,15 +468,7 @@ function extractSavedRecommendationId(data: unknown): string | null {
 }
 
 function formatHistoryDateTime(isoTimestamp: string) {
-  const date = new Date(isoTimestamp);
-  if (Number.isNaN(date.getTime())) return isoTimestamp;
-  return date.toLocaleString([], {
-    year: "numeric",
-    month: "2-digit",
-    day: "2-digit",
-    hour: "2-digit",
-    minute: "2-digit",
-  });
+  return formatParisDateTime(isoTimestamp);
 }
 
 function mapIntakeToHistoryEntry(
@@ -501,26 +494,28 @@ function mapIntakeToHistoryEntry(
   };
 }
 
-function normalizeRecommendationDoc(
-  recommendation: RecommendationResponse,
-): AnyRecord {
-  return {
-    decision: asRecord(recommendation.decision) ?? {},
-    input: asRecord(recommendation.input) ?? {},
-    saved_recommendation_id: recommendation.id,
-    saved_at: recommendation.created_at,
-    source: recommendation.source,
-  };
+function formatHistoryTime(isoTimestamp: string) {
+  return formatParisTime(isoTimestamp);
 }
 
-function formatHistoryTime(isoTimestamp: string) {
-  const date = new Date(isoTimestamp);
-  if (Number.isNaN(date.getTime())) return "";
-
-  return date.toLocaleTimeString([], {
-    hour: "2-digit",
-    minute: "2-digit",
-  });
+function extractApiErrorMessage(error: any) {
+  const detail = error?.response?.data?.detail;
+  if (typeof detail === "string" && detail.trim()) return detail.trim();
+  if (Array.isArray(detail) && detail.length > 0) {
+    return detail
+      .map((item) => {
+        if (typeof item === "string") return item;
+        if (!item || typeof item !== "object") return null;
+        const path = Array.isArray(item.loc) ? item.loc.join(".") : null;
+        const message =
+          typeof item.msg === "string" && item.msg.trim() ? item.msg.trim() : null;
+        if (path && message) return `${path}: ${message}`;
+        return message ?? path;
+      })
+      .filter((item): item is string => Boolean(item))
+      .join("\n");
+  }
+  return null;
 }
 
 export function RecommendationsScreen() {
@@ -530,112 +525,72 @@ export function RecommendationsScreen() {
     string | null
   >(null);
   const [takenById, setTakenById] = useState<Record<string, boolean>>({});
-  const [submittedTakenById, setSubmittedTakenById] = useState<
-    Record<string, boolean>
-  >({});
+  const [takenByGroupId, setTakenByGroupId] = useState<Record<string, boolean>>({});
   const [pendingTakenAtById, setPendingTakenAtById] = useState<
+    Record<string, string>
+  >({});
+  const [pendingTakenAtByGroupId, setPendingTakenAtByGroupId] = useState<
     Record<string, string>
   >({});
   const [supplementHistory, setSupplementHistory] = useState<
     SupplementHistoryEntry[]
   >([]);
   const [decisionData, setDecisionData] = useState<AnyRecord | null>(null);
-  const [loading, setLoading] = useState(true);
-  const [error, setError] = useState<string | null>(null);
-  const [isSubmittingTake, setIsSubmittingTake] = useState(false);
+  const [todayProgress, setTodayProgress] = useState<ProgressResponse | null>(null);
+  const currentRecommendationQuery = useCurrentRecommendationSnapshotQuery({
+    enabled: Boolean(token),
+  });
+  const todayProgressQuery = useProgressQuery(undefined, {
+    enabled: Boolean(token),
+  });
+  const saveIntakesMutation = useSaveRecommendationIntakesMutation();
+
+  const loading =
+    Boolean(token) &&
+    (currentRecommendationQuery.isLoading || todayProgressQuery.isLoading);
+  const error =
+    currentRecommendationQuery.error?.message ??
+    todayProgressQuery.error?.message ??
+    null;
+  const isSubmittingTake = saveIntakesMutation.isPending;
+
+  const applyLoadedState = (
+    data: AnyRecord,
+    progress: ProgressResponse,
+  ) => {
+    const savedIntakes = Array.isArray(data.intakes) ? data.intakes : [];
+    const todayTakenByGroupId = buildTakenByGroupId(progress.expected_supplements);
+    const todayTakenById = buildTakenBySupplementId(progress.expected_supplements);
+
+    const historyFromDb = savedIntakes
+      .map((intake, index) => mapIntakeToHistoryEntry(intake, index))
+      .slice(0, 100);
+
+    setDecisionData(data);
+    setTodayProgress(progress);
+    setTakenByGroupId(todayTakenByGroupId);
+    setTakenById(todayTakenById);
+    setPendingTakenAtById({});
+    setPendingTakenAtByGroupId({});
+    setSupplementHistory(historyFromDb);
+  };
 
   useEffect(() => {
-    let isMounted = true;
+    if (token) return;
+    setDecisionData(null);
+    setTodayProgress(null);
+    setTakenByGroupId({});
+    setTakenById({});
+    setPendingTakenAtById({});
+    setPendingTakenAtByGroupId({});
+    setSupplementHistory([]);
+  }, [token]);
 
-    const loadDecision = async () => {
-      if (!token) {
-        setDecisionData(null);
-        setTakenById({});
-        setSubmittedTakenById({});
-        setPendingTakenAtById({});
-        setSupplementHistory([]);
-        setLoading(false);
-        return;
-      }
-
-      try {
-        setLoading(true);
-        setError(null);
-        const latestRecommendations = await getMyRecommendations(1);
-        const latestRecommendation = latestRecommendations[0] ?? null;
-
-        let data: AnyRecord;
-        if (!latestRecommendation) {
-          data = await getDecisionForMe();
-        } else {
-          const userUpdatedAtMs = user?.updated_at
-            ? new Date(user.updated_at).getTime()
-            : Number.NaN;
-          const recommendationCreatedAtMs = latestRecommendation.created_at
-            ? new Date(latestRecommendation.created_at).getTime()
-            : Number.NaN;
-
-          const shouldRecompute =
-            Number.isFinite(userUpdatedAtMs) &&
-            Number.isFinite(recommendationCreatedAtMs) &&
-            recommendationCreatedAtMs < userUpdatedAtMs;
-
-          data = shouldRecompute
-            ? await getDecisionForMe()
-            : normalizeRecommendationDoc(latestRecommendation);
-        }
-
-        const recommendationId = extractSavedRecommendationId(data);
-
-        let savedIntakes: RecommendationIntakeResponse[] = [];
-        if (recommendationId) {
-          try {
-            savedIntakes = await getRecommendationIntakes(recommendationId, 500);
-          } catch {
-            savedIntakes = [];
-          }
-        }
-
-        const latestTakenById: Record<string, boolean> = {};
-        for (const intake of savedIntakes) {
-          const supplementId = intake.supplement_id?.trim();
-          if (!supplementId) continue;
-          if (latestTakenById[supplementId] !== undefined) continue;
-          latestTakenById[supplementId] = Boolean(intake.taken);
-        }
-
-        const historyFromDb = savedIntakes
-          .map((intake, index) => mapIntakeToHistoryEntry(intake, index))
-          .slice(0, 100);
-
-        if (!isMounted) return;
-        setDecisionData(data);
-        setTakenById(latestTakenById);
-        setSubmittedTakenById(latestTakenById);
-        setPendingTakenAtById({});
-        setSupplementHistory(historyFromDb);
-      } catch (e: any) {
-        if (!isMounted) return;
-        setDecisionData(null);
-        setTakenById({});
-        setSubmittedTakenById({});
-        setPendingTakenAtById({});
-        setSupplementHistory([]);
-        setError(
-          e?.response?.data?.detail ??
-            "Impossible de charger votre plan de supplementation.",
-        );
-      } finally {
-        if (isMounted) setLoading(false);
-      }
-    };
-
-    loadDecision();
-
-    return () => {
-      isMounted = false;
-    };
-  }, [token, user?.updated_at]);
+  useEffect(() => {
+    if (!token) return;
+    if (!currentRecommendationQuery.data || !todayProgressQuery.data) return;
+    applyLoadedState(currentRecommendationQuery.data, todayProgressQuery.data);
+  }, [token, currentRecommendationQuery.data, todayProgressQuery.data]);
 
   const objectives = useMemo(() => {
     const profileGoals = extractGoalsFromProfile(user?.profile);
@@ -715,25 +670,25 @@ export function RecommendationsScreen() {
     );
   }, [objectivePlans, selectedObjectiveKey]);
 
-  const visibleSupplementStatuses = useMemo(
-    () =>
-      visibleObjectivePlans.flatMap((plan) =>
-        plan.supplements.map((supplement) => ({
-          ...supplement,
-          isTaken: takenById[supplement.id] ?? supplement.taken ?? false,
-        })),
+  const visiblePlanGroups = useMemo(() => {
+    const groups = todayProgress?.expected_supplements ?? [];
+    if (!selectedObjectiveKey) return groups;
+
+    return groups.filter((group) =>
+      (group.items ?? []).some(
+        (item) => normalizeObjectiveKey(item.objective_key ?? "") === selectedObjectiveKey,
       ),
-    [visibleObjectivePlans, takenById],
+    );
+  }, [selectedObjectiveKey, todayProgress?.expected_supplements]);
+
+  const takenSupplements = useMemo(
+    () => visiblePlanGroups.filter((supplement) => supplement.taken),
+    [visiblePlanGroups],
   );
 
-  const takenSupplements = useMemo<SupplementStatus[]>(
-    () => visibleSupplementStatuses.filter((supplement) => supplement.isTaken),
-    [visibleSupplementStatuses],
-  );
-
-  const notTakenSupplements = useMemo<SupplementStatus[]>(
-    () => visibleSupplementStatuses.filter((supplement) => !supplement.isTaken),
-    [visibleSupplementStatuses],
+  const notTakenSupplements = useMemo(
+    () => visiblePlanGroups.filter((supplement) => !supplement.taken),
+    [visiblePlanGroups],
   );
 
   const visibleHistory = useMemo(() => {
@@ -748,12 +703,31 @@ export function RecommendationsScreen() {
     () => visibleHistory.slice(0, 8),
     [visibleHistory],
   );
+  const takenByNameKey = useMemo(() => {
+    const next: Record<string, boolean> = {};
+    for (const group of todayProgress?.expected_supplements ?? []) {
+      const key = normalizeTextToken(group.name);
+      if (!key) continue;
+      next[key] = Boolean(group.taken);
+    }
+    return next;
+  }, [todayProgress?.expected_supplements]);
   const latestTakenAtBySupplementId = useMemo(() => {
     const map: Record<string, string> = {};
     for (const entry of supplementHistory) {
       if (!entry.taken) continue;
       if (map[entry.supplementId]) continue;
       map[entry.supplementId] = entry.timestamp;
+    }
+    return map;
+  }, [supplementHistory]);
+  const latestTakenAtByNameKey = useMemo(() => {
+    const map: Record<string, string> = {};
+    for (const entry of supplementHistory) {
+      if (!entry.taken) continue;
+      const key = normalizeTextToken(entry.supplementName);
+      if (!key || map[key]) continue;
+      map[key] = entry.timestamp;
     }
     return map;
   }, [supplementHistory]);
@@ -781,7 +755,7 @@ export function RecommendationsScreen() {
   }, [objectivePlans]);
 
   const takenCount = takenSupplements.length;
-  const totalSupplements = visibleSupplementStatuses.length;
+  const totalSupplements = visiblePlanGroups.length;
   const pendingCount = Math.max(totalSupplements - takenCount, 0);
   const takenPreview = takenSupplements.slice(0, 6);
   const notTakenPreview = notTakenSupplements.slice(0, 6);
@@ -791,61 +765,103 @@ export function RecommendationsScreen() {
     0,
   );
 
-  const pendingTakeChanges = useMemo(() => {
-    const changes: {
-      supplement: Supplement;
-      objectiveKey: string;
-      objectiveLabel: string;
-      previousTaken: boolean;
-      nextTaken: boolean;
-    }[] = [];
+  const pendingTakeSubmission = useMemo(() => {
+    const groups = todayProgress?.expected_supplements ?? [];
+    const changedGroupIds: string[] = [];
+    const nextTakenByGroupId: Record<string, boolean> = {};
+    const nextTakenAtByGroupId: Record<string, string> = {};
 
-    for (const plan of objectivePlans) {
-      for (const supplement of plan.supplements) {
-        const nextTaken = takenById[supplement.id] ?? supplement.taken ?? false;
-        const previousTaken =
-          submittedTakenById[supplement.id] ?? supplement.taken ?? false;
+    for (const group of groups) {
+      const currentTaken = Boolean(group.taken);
+      const itemStates = (group.items ?? [])
+        .map((item) => takenById[item.supplement_id])
+        .filter((value): value is boolean => typeof value === "boolean");
+      const localGroupTaken = takenByGroupId[group.id];
+      const nextTaken =
+        typeof localGroupTaken === "boolean"
+          ? localGroupTaken
+          : itemStates.length > 0
+          ? itemStates.some(Boolean)
+          : currentTaken;
 
-        if (nextTaken === previousTaken) continue;
+      nextTakenByGroupId[group.id] = nextTaken;
 
-        changes.push({
-          supplement,
-          objectiveKey: normalizeObjectiveKey(plan.key),
-          objectiveLabel: plan.label,
-          previousTaken,
-          nextTaken,
-        });
+      const takenAt =
+        pendingTakenAtByGroupId[group.id] ??
+        (group.items ?? [])
+          .map((item) => pendingTakenAtById[item.supplement_id])
+          .find((value): value is string => typeof value === "string" && value.length > 0);
+      if (takenAt) {
+        nextTakenAtByGroupId[group.id] = takenAt;
+      }
+
+      if (nextTaken !== currentTaken) {
+        changedGroupIds.push(group.id);
       }
     }
 
-    return changes;
-  }, [objectivePlans, submittedTakenById, takenById]);
+    const anchorYmd = todayProgress?.selected_date ?? formatParisYmd(new Date());
+    const payload = buildBulkIntakePayload({
+      groups,
+      changedGroupIds,
+      takenByGroupId: nextTakenByGroupId,
+      takenAtByGroupId: nextTakenAtByGroupId,
+      selectedYmd: anchorYmd,
+      anchorYmd,
+    });
 
-  const pendingTakeChangesCount = pendingTakeChanges.length;
+    return {
+      changedGroupIds,
+      payload,
+    };
+  }, [
+    todayProgress?.expected_supplements,
+    todayProgress?.selected_date,
+    takenByGroupId,
+    takenById,
+    pendingTakenAtById,
+    pendingTakenAtByGroupId,
+  ]);
+  const pendingTakeChangesCount = pendingTakeSubmission.changedGroupIds.length;
   const savedRecommendationId = useMemo(
     () => extractSavedRecommendationId(decisionData),
     [decisionData],
   );
   const canSubmitTake =
-    pendingTakeChangesCount > 0 && !isSubmittingTake && Boolean(savedRecommendationId);
+    pendingTakeSubmission.payload.length > 0 &&
+    !isSubmittingTake &&
+    Boolean(savedRecommendationId);
 
   const toggleTaken = (supplement: Supplement, currentState: boolean) => {
     const nextState = !currentState;
-    const toggledAt = new Date().toISOString();
+    const toggledAt = getCurrentParisTimestamp();
     const linkedIds = linkedSupplementIdsById[supplement.id] ?? [supplement.id];
+    const groupId = normalizeTextToken(supplement.name);
 
     setTakenById((prev) => ({
       ...prev,
       ...Object.fromEntries(linkedIds.map((id) => [id, nextState])),
     }));
+    if (groupId) {
+      setTakenByGroupId((prev) => ({
+        ...prev,
+        [groupId]: nextState,
+      }));
+    }
     setPendingTakenAtById((prev) => ({
       ...prev,
       ...Object.fromEntries(linkedIds.map((id) => [id, toggledAt])),
     }));
+    if (groupId) {
+      setPendingTakenAtByGroupId((prev) => ({
+        ...prev,
+        [groupId]: toggledAt,
+      }));
+    }
   };
 
   const submitTakenSupplements = async () => {
-    if (pendingTakeChangesCount === 0 || isSubmittingTake) return;
+    if (pendingTakeSubmission.payload.length === 0 || isSubmittingTake) return;
 
     const recommendationId = savedRecommendationId;
     if (!recommendationId) {
@@ -856,47 +872,15 @@ export function RecommendationsScreen() {
       return;
     }
 
-    const submittedAt = new Date().toISOString();
-    const payload = pendingTakeChanges.map((change) => ({
-      supplement_id: change.supplement.id,
-      supplement_name: change.supplement.name,
-      objective_key: change.objectiveKey,
-      objective_label: change.objectiveLabel,
-      taken: change.nextTaken,
-      taken_at: pendingTakenAtById[change.supplement.id] ?? submittedAt,
-    }));
-
-    setIsSubmittingTake(true);
-
     try {
-      const response = await saveRecommendationIntakes(recommendationId, payload);
-
-      setDecisionData((prev) => {
-        const prevRecord = asRecord(prev) ?? {};
-        return {
-          ...prevRecord,
-          saved_recommendation_id: response.recommendation_id,
-          decision: asRecord(response.decision) ?? prevRecord.decision ?? {},
-        };
+      await saveIntakesMutation.mutateAsync({
+        recommendationId,
+        intakes: pendingTakeSubmission.payload,
       });
-
-      setSubmittedTakenById((prev) => {
-        const next = { ...prev };
-        for (const plan of objectivePlans) {
-          for (const supplement of plan.supplements) {
-            next[supplement.id] = takenById[supplement.id] ?? supplement.taken ?? false;
-          }
-        }
-        return next;
-      });
-
-      setSupplementHistory((prev) => {
-        const entries = response.intakes.map((intake, index) =>
-          mapIntakeToHistoryEntry(intake, index),
-        );
-        return [...entries, ...prev].slice(0, 100);
-      });
-      setPendingTakenAtById({});
+      await Promise.all([
+        currentRecommendationQuery.refetch(),
+        todayProgressQuery.refetch(),
+      ]);
 
       Alert.alert(
         "Prises enregistrees",
@@ -905,11 +889,9 @@ export function RecommendationsScreen() {
     } catch (e: any) {
       Alert.alert(
         "Erreur",
-        e?.response?.data?.detail ??
+        extractApiErrorMessage(e) ??
           "Impossible d'enregistrer les prises pour le moment.",
       );
-    } finally {
-      setIsSubmittingTake(false);
     }
   };
 
@@ -1063,10 +1045,15 @@ export function RecommendationsScreen() {
                   ) : (
                     plan.supplements.map((supplement) => {
                       const isExpanded = expandedId === supplement.id;
+                      const nameKey = normalizeTextToken(supplement.name);
                       const isTaken =
-                        takenById[supplement.id] ?? supplement.taken;
+                        takenById[supplement.id] ??
+                        (nameKey ? takenByGroupId[nameKey] : undefined) ??
+                        (nameKey ? takenByNameKey[nameKey] : undefined) ??
+                        supplement.taken;
                       const latestTakenAt =
-                        latestTakenAtBySupplementId[supplement.id];
+                        latestTakenAtBySupplementId[supplement.id] ??
+                        (nameKey ? latestTakenAtByNameKey[nameKey] : undefined);
 
                       return (
                         <View key={supplement.id} style={styles.supplementCard}>
@@ -1076,15 +1063,15 @@ export function RecommendationsScreen() {
                                 onPress={() =>
                                   void toggleTaken(
                                     supplement,
-                                    isTaken,
+                                    Boolean(isTaken),
                                   )
                                 }
                                 style={[
                                   styles.checkbox,
-                                  isTaken && styles.checkboxChecked,
+                                  Boolean(isTaken) && styles.checkboxChecked,
                                 ]}
                               >
-                                {isTaken && <Check size={16} color="white" />}
+                                {Boolean(isTaken) && <Check size={16} color="white" />}
                               </TouchableOpacity>
 
                               <View style={styles.supplementContent}>
@@ -1097,7 +1084,7 @@ export function RecommendationsScreen() {
                                       <View
                                         style={[
                                           styles.supplementStatusPill,
-                                          isTaken
+                                          Boolean(isTaken)
                                             ? styles.supplementStatusPillTaken
                                             : styles.supplementStatusPillPending,
                                         ]}
@@ -1105,12 +1092,12 @@ export function RecommendationsScreen() {
                                         <Text
                                           style={[
                                             styles.supplementStatusText,
-                                            isTaken
+                                            Boolean(isTaken)
                                               ? styles.supplementStatusTextTaken
                                               : styles.supplementStatusTextPending,
                                           ]}
                                         >
-                                          {isTaken ? "Pris" : "A prendre"}
+                                          {Boolean(isTaken) ? "Pris" : "A prendre"}
                                         </Text>
                                       </View>
                                     </View>

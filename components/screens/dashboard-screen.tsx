@@ -1,13 +1,8 @@
 import { HeaderLogoutButton } from "@/components/header-logout-button";
 import { useAuth } from "@/context/auth";
-import {
-  getDashboardRandomQuestions,
-  getProgress,
-  type HomeQuestionResponse,
-  type ProgressResponse,
-  type UserResponse,
-} from "@/services/api";
-import { ArrowRight, Check, ClipboardList, Sparkles, Target } from "lucide-react-native";
+import { useDashboardRandomQuestionsQuery, useProgressQuery } from "@/hooks/use-health-data";
+import { getUserFirstName } from "@/utils/user-display";
+import { Activity, ArrowRight, Check, ClipboardList, Shield, Sparkles, Target } from "lucide-react-native";
 import { useEffect, useMemo, useRef, useState } from "react";
 import {
   ActivityIndicator,
@@ -20,43 +15,12 @@ import {
 } from "react-native";
 
 interface DashboardScreenProps {
-  userName?: string;
-  onAddGoal?: () => void;
+  onEditProfile?: () => void;
   onOpenTracking?: () => void;
 }
 
-type QuestionCache = {
-  token: string | null;
-  questions: HomeQuestionResponse[];
-};
-
-let questionSessionCache: QuestionCache | null = null;
-
-function getDisplayName(user: ReturnType<typeof useAuth>["user"], fallback?: string) {
-  const profile = (user?.profile ?? {}) as UserResponse["profile"];
-  const profileRecord =
-    typeof profile === "object" && profile !== null ? (profile as Record<string, unknown>) : null;
-  const personal =
-    profileRecord && "personal" in profileRecord
-      ? (profileRecord.personal as Record<string, unknown> | null | undefined)
-      : null;
-  const personalRecord =
-    typeof personal === "object" && personal !== null ? personal : null;
-
-  const rawName =
-    personalRecord?.name ||
-    personalRecord?.first_name ||
-    profileRecord?.first_name ||
-    fallback ||
-    user?.email?.split("@")[0] ||
-    "vous";
-
-  return String(rawName).trim().split(" ")[0] || "vous";
-}
-
 export function DashboardScreen({
-  userName,
-  onAddGoal,
+  onEditProfile,
   onOpenTracking,
 }: DashboardScreenProps) {
   const { user, token } = useAuth();
@@ -65,12 +29,20 @@ export function DashboardScreen({
   const carouselRef = useRef<ScrollView | null>(null);
   const activeIndexRef = useRef(0);
 
-  const [loading, setLoading] = useState(true);
-  const [questionsError, setQuestionsError] = useState<string | null>(null);
-  const [previewError, setPreviewError] = useState<string | null>(null);
-  const [questions, setQuestions] = useState<HomeQuestionResponse[]>([]);
-  const [trackingPreview, setTrackingPreview] = useState<ProgressResponse | null>(null);
   const [activeIndex, setActiveIndex] = useState(0);
+
+  const questionsQuery = useDashboardRandomQuestionsQuery(token, 4, {
+    enabled: Boolean(token),
+  });
+  const trackingPreviewQuery = useProgressQuery(undefined, {
+    enabled: Boolean(token),
+  });
+
+  const questions = questionsQuery.data ?? [];
+  const trackingPreview = trackingPreviewQuery.data ?? null;
+  const loading = questionsQuery.isLoading || trackingPreviewQuery.isLoading;
+  const questionsError = questionsQuery.error?.message ?? null;
+  const previewError = trackingPreviewQuery.error?.message ?? null;
 
   const slideWidth = Math.max(280, Math.min(windowWidth - 48, 560));
   const slideGap = 12;
@@ -79,60 +51,6 @@ export function DashboardScreen({
   useEffect(() => {
     activeIndexRef.current = activeIndex;
   }, [activeIndex]);
-
-  useEffect(() => {
-    let mounted = true;
-
-    async function load() {
-      setLoading(true);
-      setQuestionsError(null);
-      setPreviewError(null);
-
-      if (
-        questionSessionCache &&
-        questionSessionCache.token === token &&
-        questionSessionCache.questions.length > 0
-      ) {
-        setQuestions(questionSessionCache.questions);
-      }
-
-      const [questionsResult, previewResult] = await Promise.allSettled([
-        questionSessionCache &&
-        questionSessionCache.token === token &&
-        questionSessionCache.questions.length > 0
-          ? Promise.resolve(questionSessionCache.questions)
-          : getDashboardRandomQuestions(4),
-        getProgress(),
-      ]);
-
-      if (!mounted) return;
-
-      if (questionsResult.status === "fulfilled") {
-        setQuestions(questionsResult.value);
-        questionSessionCache = {
-          token,
-          questions: questionsResult.value,
-        };
-      } else {
-        console.error("Failed to load home questions:", questionsResult.reason);
-        setQuestionsError("Impossible de charger les questions du moment.");
-      }
-
-      if (previewResult.status === "fulfilled") {
-        setTrackingPreview(previewResult.value);
-      } else {
-        console.error("Failed to load tracking preview:", previewResult.reason);
-        setPreviewError("Impossible de charger l apercu du suivi.");
-      }
-
-      setLoading(false);
-    }
-
-    load();
-    return () => {
-      mounted = false;
-    };
-  }, [token]);
 
   useEffect(() => {
     if (questions.length <= 1) return;
@@ -149,7 +67,66 @@ export function DashboardScreen({
     return () => clearInterval(timer);
   }, [questions.length, slideInterval]);
 
-  const displayName = useMemo(() => getDisplayName(user, userName), [user, userName]);
+  const displayName = useMemo(() => getUserFirstName(user), [user]);
+  const profileSummary = useMemo(() => {
+    const profile =
+      typeof user?.profile === "object" && user.profile !== null
+        ? (user.profile as Record<string, unknown>)
+        : null;
+    const medical =
+      profile && typeof profile.medical === "object" && profile.medical !== null
+        ? (profile.medical as Record<string, unknown>)
+        : null;
+
+    const goals = Array.isArray(profile?.goals)
+      ? profile.goals.filter(
+          (item): item is string => typeof item === "string" && item.trim().length > 0,
+        )
+      : [];
+    const rawActivity =
+      typeof profile?.activity_level === "string" ? profile.activity_level.trim() : "";
+    const activityLabel =
+      rawActivity === "very_active"
+        ? "Tres active"
+        : rawActivity === "active"
+          ? "Active"
+          : rawActivity === "moderate"
+            ? "Moderee"
+            : rawActivity === "light"
+              ? "Legere"
+              : rawActivity === "sedentary"
+                ? "Sedentaire"
+                : "A definir";
+    const conditions = Array.isArray(medical?.conditions)
+      ? medical.conditions.filter(
+          (item): item is string => typeof item === "string" && item.trim().length > 0,
+        )
+      : [];
+    const medications = Array.isArray(medical?.medications)
+      ? medical.medications.filter(
+          (item): item is string => typeof item === "string" && item.trim().length > 0,
+        )
+      : [];
+    const diseases = Array.isArray(medical?.diseases)
+      ? medical.diseases.filter(
+          (item): item is string => typeof item === "string" && item.trim().length > 0,
+        )
+      : [];
+    const allergies = Array.isArray(medical?.allergies)
+      ? medical.allergies.filter(
+          (item): item is string =>
+            typeof item === "string" &&
+            item.trim().length > 0 &&
+            item !== "none",
+        )
+      : [];
+
+    return {
+      goalsCount: goals.length,
+      activityLabel,
+      safetyCount: conditions.length + medications.length + diseases.length + allergies.length,
+    };
+  }, [user?.profile]);
   const previewRemaining = Math.max(
     0,
     (trackingPreview?.supplements_total ?? 0) - (trackingPreview?.supplements_taken ?? 0),
@@ -348,12 +325,35 @@ export function DashboardScreen({
           </View>
         ) : null}
 
-        <TouchableOpacity style={styles.goalsButton} onPress={onAddGoal} activeOpacity={0.9}>
-          <View>
-            <Text style={styles.goalsButtonLabel}>Objectifs</Text>
-            <Text style={styles.goalsButtonTitle}>Mettre a jour mon profil et mes objectifs</Text>
+        <TouchableOpacity style={styles.profileButton} onPress={onEditProfile} activeOpacity={0.9}>
+          <View style={styles.profileButtonHeader}>
+            <View>
+              <Text style={styles.profileButtonLabel}>Profil sante</Text>
+              <Text style={styles.profileButtonTitle}>Mettre a jour les informations utiles</Text>
+            </View>
+            <ArrowRight size={18} color="#14272d" />
           </View>
-          <ArrowRight size={18} color="#14272d" />
+          <Text style={styles.profileButtonSubtitle}>
+            Ajustez ce qui influence directement vos recommandations et leurs precautions.
+          </Text>
+          <View style={styles.profileStatsRow}>
+            <View style={styles.profileStatPill}>
+              <Target size={14} color="#2f675c" />
+              <Text style={styles.profileStatText}>
+                {profileSummary.goalsCount} objectif{profileSummary.goalsCount > 1 ? "s" : ""}
+              </Text>
+            </View>
+            <View style={styles.profileStatPill}>
+              <Activity size={14} color="#2f675c" />
+              <Text style={styles.profileStatText}>{profileSummary.activityLabel}</Text>
+            </View>
+            <View style={styles.profileStatPill}>
+              <Shield size={14} color="#2f675c" />
+              <Text style={styles.profileStatText}>
+                {profileSummary.safetyCount} vigilance{profileSummary.safetyCount > 1 ? "s" : ""}
+              </Text>
+            </View>
+          </View>
         </TouchableOpacity>
       </View>
     </ScrollView>
@@ -621,7 +621,7 @@ const styles = StyleSheet.create({
     fontSize: 15,
     fontWeight: "800",
   },
-  goalsButton: {
+  profileButton: {
     marginTop: 6,
     backgroundColor: "rgba(223, 196, 133, 0.28)",
     borderRadius: 20,
@@ -629,12 +629,15 @@ const styles = StyleSheet.create({
     paddingVertical: 16,
     borderWidth: 1,
     borderColor: "rgba(190, 162, 98, 0.34)",
+    gap: 14,
+  },
+  profileButtonHeader: {
     flexDirection: "row",
-    alignItems: "center",
+    alignItems: "flex-start",
     justifyContent: "space-between",
     gap: 14,
   },
-  goalsButtonLabel: {
+  profileButtonLabel: {
     color: "#7ea69d",
     fontSize: 11,
     fontWeight: "800",
@@ -642,9 +645,35 @@ const styles = StyleSheet.create({
     letterSpacing: 0.8,
     marginBottom: 4,
   },
-  goalsButtonTitle: {
+  profileButtonTitle: {
     color: "#14272d",
     fontSize: 15,
+    fontWeight: "800",
+  },
+  profileButtonSubtitle: {
+    color: "rgba(20, 39, 45, 0.74)",
+    fontSize: 13,
+    lineHeight: 20,
+  },
+  profileStatsRow: {
+    flexDirection: "row",
+    flexWrap: "wrap",
+    gap: 10,
+  },
+  profileStatPill: {
+    flexDirection: "row",
+    alignItems: "center",
+    gap: 6,
+    minHeight: 34,
+    paddingHorizontal: 12,
+    borderRadius: 999,
+    backgroundColor: "rgba(255, 255, 255, 0.74)",
+    borderWidth: 1,
+    borderColor: "rgba(20, 39, 45, 0.06)",
+  },
+  profileStatText: {
+    color: "#14272d",
+    fontSize: 12,
     fontWeight: "700",
   },
   emptyCard: {
