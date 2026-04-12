@@ -666,7 +666,9 @@ export function SuiviScreen({ onOpenRecommendations }: SuiviScreenProps) {
     }).start();
   }, [segment, segmentAnim]);
 
-  const segmentItemWidth = segmentTrackWidth > 0 ? segmentTrackWidth / 3 : 0;
+  const segmentTrackInset = 8;
+  const segmentInnerWidth = Math.max(segmentTrackWidth - segmentTrackInset, 0);
+  const segmentItemWidth = segmentInnerWidth > 0 ? segmentInnerWidth / 3 : 0;
   const indicatorTranslateX = segmentAnim.interpolate({
     inputRange: [0, 1, 2],
     outputRange: [0, segmentItemWidth, segmentItemWidth * 2],
@@ -757,7 +759,10 @@ export function SuiviScreen({ onOpenRecommendations }: SuiviScreenProps) {
               onPress={() => setSegment("today")}
               activeOpacity={0.9}
             >
-              <Text style={[styles.segmentText, segment === "today" && styles.segmentTextActive]}>
+              <Text
+                style={[styles.segmentText, segment === "today" && styles.segmentTextActive]}
+                numberOfLines={1}
+              >
                 {"Aujourd'hui"}
               </Text>
             </TouchableOpacity>
@@ -768,6 +773,7 @@ export function SuiviScreen({ onOpenRecommendations }: SuiviScreenProps) {
             >
               <Text
                 style={[styles.segmentText, segment === "trends" && styles.segmentTextActive]}
+                numberOfLines={1}
               >
                 Tendances
               </Text>
@@ -779,6 +785,7 @@ export function SuiviScreen({ onOpenRecommendations }: SuiviScreenProps) {
             >
               <Text
                 style={[styles.segmentText, segment === "history" && styles.segmentTextActive]}
+                numberOfLines={1}
               >
                 Historique
               </Text>
@@ -1636,6 +1643,7 @@ const styles = StyleSheet.create({
   segmentItem: {
     flex: 1,
     height: 36,
+    paddingHorizontal: 6,
     alignItems: "center",
     justifyContent: "center",
   },
@@ -1643,9 +1651,11 @@ const styles = StyleSheet.create({
     color: "rgba(255, 255, 255, 0.72)",
     fontSize: 12,
     fontWeight: "700",
+    textAlign: "center",
   },
   segmentTextActive: {
     color: "#14272d",
+    fontWeight: "800",
   },
   mainContent: {
     paddingHorizontal: 24,
@@ -1846,7 +1856,7 @@ const styles = StyleSheet.create({
     justifyContent: "center",
   },
   ringPct: {
-    color: "#14272d",
+    color: "#f4efe0",
     fontSize: 14,
     fontWeight: "800",
   },

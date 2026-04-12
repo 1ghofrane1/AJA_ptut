@@ -201,19 +201,6 @@ export function LoginScreen({ onNavigate }: LoginScreenProps) {
                 )}
               </LinearGradient>
             </TouchableOpacity>
-
-            <View style={styles.divider}>
-              <View style={styles.dividerLine} />
-              <Text style={styles.dividerText}>ou</Text>
-              <View style={styles.dividerLine} />
-            </View>
-
-            <TouchableOpacity style={styles.googleButton} activeOpacity={0.88}>
-              <View style={styles.googleIconWrap}>
-                <Text style={styles.googleIconText}>G</Text>
-              </View>
-              <Text style={styles.googleButtonText}>Continuer avec Google</Text>
-            </TouchableOpacity>
           </View>
 
           <View style={styles.signupSection}>
@@ -422,57 +409,9 @@ const styles = StyleSheet.create({
     fontSize: 16,
     fontWeight: "700",
   },
-  divider: {
-    flexDirection: "row",
-    alignItems: "center",
-    gap: 16,
-    paddingVertical: 18,
-  },
-  dividerLine: {
-    flex: 1,
-    height: 1,
-    backgroundColor: "rgba(20,39,45,0.1)",
-  },
-  dividerText: {
-    color: "#7ea69d",
-    fontSize: 13,
-    fontWeight: "600",
-  },
-  googleButton: {
-    borderRadius: 16,
-    borderWidth: 1,
-    borderColor: "rgba(20,39,45,0.12)",
-    backgroundColor: "rgba(255,255,255,0.92)",
-    paddingVertical: 15,
-    paddingHorizontal: 16,
-    flexDirection: "row",
-    alignItems: "center",
-    justifyContent: "center",
-    gap: 12,
-  },
-  googleIconWrap: {
-    width: 28,
-    height: 28,
-    borderRadius: 14,
-    backgroundColor: "#ffffff",
-    borderWidth: 1,
-    borderColor: "rgba(20,39,45,0.08)",
-    alignItems: "center",
-    justifyContent: "center",
-  },
-  googleIconText: {
-    color: "#4285F4",
-    fontSize: 15,
-    fontWeight: "700",
-  },
-  googleButtonText: {
-    color: "#14272d",
-    fontSize: 15,
-    fontWeight: "600",
-  },
   signupSection: {
     alignItems: "center",
-    marginTop: 26,
+    marginTop: 20,
     paddingBottom: 32,
   },
   signupText: {

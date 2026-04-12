@@ -1,11 +1,14 @@
 import { HeaderLogoutButton } from "@/components/header-logout-button";
 import { useAuth } from "@/context/auth";
 import { useDashboardRandomQuestionsQuery, useProgressQuery } from "@/hooks/use-health-data";
+import type { HomeQuestionResponse } from "@/services/api";
 import { getUserFirstName } from "@/utils/user-display";
 import { Activity, ArrowRight, Check, ClipboardList, Shield, Sparkles, Target } from "lucide-react-native";
 import { useEffect, useMemo, useRef, useState } from "react";
 import {
   ActivityIndicator,
+  Modal,
+  Pressable,
   ScrollView,
   StyleSheet,
   Text,
@@ -32,6 +35,7 @@ export function DashboardScreen({
   const activeIndexRef = useRef(0);
 
   const [activeIndex, setActiveIndex] = useState(0);
+  const [selectedQuestion, setSelectedQuestion] = useState<HomeQuestionResponse | null>(null);
 
   const questionsQuery = useDashboardRandomQuestionsQuery(token, 4, {
     enabled: Boolean(token),
@@ -169,196 +173,248 @@ export function DashboardScreen({
   }
 
   return (
-    <ScrollView
-      className="flex-1 bg-aja-cream"
-      style={styles.container}
-      contentContainerStyle={styles.contentContainer}
-      showsVerticalScrollIndicator={false}
-    >
-      <View style={[styles.hero, { paddingTop: insets.top + 14 }]}>
-        <View style={styles.heroTopRow}>
-          <View style={styles.heroBadge}>
-            <Sparkles size={14} color="#14272d" />
-            <Text style={styles.heroBadgeText}>Accueil</Text>
-          </View>
-          <HeaderLogoutButton />
-        </View>
-        <Text style={styles.heroTitle}>Bonjour, {displayName}</Text>
-        <Text style={styles.heroSubtitle}>
-          Une page courte et utile pour decouvrir, puis replonger dans votre suivi.
-        </Text>
-      </View>
-
-      <View style={styles.mainContent}>
-        <View style={styles.sectionHeader}>
-          <Text style={styles.sectionTitle}>Questions du moment</Text>
-        </View>
-
-        {questions.length === 0 ? (
-          <View style={styles.emptyCard}>
-            <Text style={styles.emptyTitle}>Aucune carte disponible</Text>
-            <Text style={styles.emptyText}>
-              Les questions apparaitront ici des que la base encyclopedique aura des fiches pretes.
-            </Text>
-          </View>
-        ) : (
-          <View style={styles.carouselBlock}>
-            <ScrollView
-              ref={carouselRef}
-              horizontal
-              showsHorizontalScrollIndicator={false}
-              decelerationRate="fast"
-              snapToInterval={slideInterval}
-              snapToAlignment="start"
-              disableIntervalMomentum
-              contentContainerStyle={styles.carouselContent}
-              onMomentumScrollEnd={(event) =>
-                handleCarouselEnd(event.nativeEvent.contentOffset.x)
-              }
-            >
-              {questions.map((item, index) => (
-                <View
-                  key={item.id}
-                  style={[
-                    styles.questionCard,
-                    { width: slideWidth },
-                    index < questions.length - 1 && { marginRight: slideGap },
-                  ]}
-                >
-                  <View style={styles.questionMetaRow}>
-                    <Text style={styles.questionCategory}>{item.category}</Text>
-                    <Text style={styles.questionSupplement}>{item.supplement_name}</Text>
-                  </View>
-                  <Text style={styles.questionText}>{item.question}</Text>
-                  <Text style={styles.answerText}>{item.answer}</Text>
-                </View>
-              ))}
-            </ScrollView>
-
-            <View style={styles.paginationRow}>
-              {questions.map((item, index) => (
-                <View
-                  key={`dot-${item.id}`}
-                  style={[
-                    styles.paginationDot,
-                    index === activeIndex && styles.paginationDotActive,
-                  ]}
-                />
-              ))}
+    <View style={styles.container}>
+      <ScrollView
+        className="flex-1 bg-aja-cream"
+        style={styles.container}
+        contentContainerStyle={styles.contentContainer}
+        showsVerticalScrollIndicator={false}
+      >
+        <View style={[styles.hero, { paddingTop: insets.top + 14 }]}>
+          <View style={styles.heroTopRow}>
+            <View style={styles.heroBadge}>
+              <Sparkles size={14} color="#14272d" />
+              <Text style={styles.heroBadgeText}>Accueil</Text>
             </View>
+            <HeaderLogoutButton />
           </View>
-        )}
-
-        <View style={styles.sectionHeader}>
-          <Text style={styles.sectionTitle}>Apercu du suivi</Text>
-        </View>
-
-        {previewError ? (
-          <View style={styles.emptyCard}>
-            <Text style={styles.emptyTitle}>Apercu indisponible</Text>
-            <Text style={styles.emptyText}>{previewError}</Text>
-          </View>
-        ) : trackingPreview ? (
-          <View style={styles.previewCard}>
-            <View style={styles.previewTopRow}>
-              <View>
-                <Text style={styles.previewBadge}>Aujourd hui</Text>
-                <Text style={styles.previewTitle}>Votre suivi en bref</Text>
-              </View>
-              <View style={styles.previewProgressPill}>
-                <Text style={styles.previewProgressText}>{trackingPreview.today_progress}%</Text>
-              </View>
-            </View>
-
-            <View style={styles.previewStatsRow}>
-              <View style={styles.previewStatItem}>
-                <Target size={15} color="#2f675c" />
-                <Text style={styles.previewStatValue}>{trackingPreview.today_progress}%</Text>
-                <Text style={styles.previewStatLabel}>Progression</Text>
-              </View>
-              <View style={styles.previewDivider} />
-              <View style={styles.previewStatItem}>
-                <Check size={15} color="#2f675c" />
-                <Text style={styles.previewStatValue}>{trackingPreview.supplements_taken ?? 0}</Text>
-                <Text style={styles.previewStatLabel}>Pris</Text>
-              </View>
-              <View style={styles.previewDivider} />
-              <View style={styles.previewStatItem}>
-                <ClipboardList size={15} color="#2f675c" />
-                <Text style={styles.previewStatValue}>{trackingPreview.supplements_total ?? 0}</Text>
-                <Text style={styles.previewStatLabel}>Prevus</Text>
-              </View>
-            </View>
-
-            <View style={styles.previewInnerCard}>
-              <Text style={styles.previewInnerTitle}>
-                {previewRemaining} complement{previewRemaining > 1 ? "s" : ""} restant
-                {previewRemaining > 1 ? "s" : ""}
-              </Text>
-              {previewPlan.length === 0 ? (
-                <Text style={styles.previewEmptyText}>Aucun complement planifie pour aujourd hui.</Text>
-              ) : (
-                <View style={styles.previewList}>
-                  {previewPlan.map((item) => (
-                    <View key={item.id} style={styles.previewListRow}>
-                      <View
-                        style={[
-                          styles.previewListDot,
-                          item.taken && styles.previewListDotDone,
-                        ]}
-                      />
-                      <Text style={styles.previewListText} numberOfLines={1}>
-                        {item.name}
-                      </Text>
-                    </View>
-                  ))}
-                </View>
-              )}
-            </View>
-
-            <TouchableOpacity
-              style={styles.trackingButton}
-              onPress={onOpenTracking}
-              activeOpacity={0.9}
-            >
-              <Text style={styles.trackingButtonText}>Ouvrir le suivi complet</Text>
-              <ArrowRight size={18} color="white" />
-            </TouchableOpacity>
-          </View>
-        ) : null}
-
-        <TouchableOpacity style={styles.profileButton} onPress={onEditProfile} activeOpacity={0.9}>
-          <View style={styles.profileButtonHeader}>
-            <View>
-              <Text style={styles.profileButtonLabel}>Profil sante</Text>
-              <Text style={styles.profileButtonTitle}>Mettre a jour les informations utiles</Text>
-            </View>
-            <ArrowRight size={18} color="#14272d" />
-          </View>
-          <Text style={styles.profileButtonSubtitle}>
-            Ajustez ce qui influence directement vos recommandations et leurs precautions.
+          <Text style={styles.heroTitle}>Bonjour, {displayName}</Text>
+          <Text style={styles.heroSubtitle}>
+            Une page courte et utile pour decouvrir, puis replonger dans votre suivi.
           </Text>
-          <View style={styles.profileStatsRow}>
-            <View style={styles.profileStatPill}>
-              <Target size={14} color="#2f675c" />
-              <Text style={styles.profileStatText}>
-                {profileSummary.goalsCount} objectif{profileSummary.goalsCount > 1 ? "s" : ""}
-              </Text>
-            </View>
-            <View style={styles.profileStatPill}>
-              <Activity size={14} color="#2f675c" />
-              <Text style={styles.profileStatText}>{profileSummary.activityLabel}</Text>
-            </View>
-            <View style={styles.profileStatPill}>
-              <Shield size={14} color="#2f675c" />
-              <Text style={styles.profileStatText}>
-                {profileSummary.safetyCount} vigilance{profileSummary.safetyCount > 1 ? "s" : ""}
-              </Text>
-            </View>
+        </View>
+        <View style={styles.mainContent}>
+          <View style={styles.sectionHeader}>
+            <Text style={styles.sectionTitle}>Questions du moment</Text>
           </View>
-        </TouchableOpacity>
-      </View>
-    </ScrollView>
+
+          {questions.length === 0 ? (
+            <View style={styles.emptyCard}>
+              <Text style={styles.emptyTitle}>Aucune carte disponible</Text>
+              <Text style={styles.emptyText}>
+                Les questions apparaitront ici des que la base encyclopedique aura des fiches pretes.
+              </Text>
+            </View>
+          ) : (
+            <View style={styles.carouselBlock}>
+              <ScrollView
+                ref={carouselRef}
+                horizontal
+                showsHorizontalScrollIndicator={false}
+                decelerationRate="fast"
+                snapToInterval={slideInterval}
+                snapToAlignment="start"
+                disableIntervalMomentum
+                contentContainerStyle={styles.carouselContent}
+                onMomentumScrollEnd={(event) =>
+                  handleCarouselEnd(event.nativeEvent.contentOffset.x)
+                }
+              >
+                {questions.map((item, index) => (
+                  <TouchableOpacity
+                    key={item.id}
+                    style={[
+                      styles.questionCard,
+                      { width: slideWidth },
+                      index < questions.length - 1 && { marginRight: slideGap },
+                    ]}
+                    onPress={() => setSelectedQuestion(item)}
+                    activeOpacity={0.94}
+                  >
+                    <View style={styles.questionMetaRow}>
+                      <Text style={styles.questionCategory}>{item.category}</Text>
+                      <Text style={styles.questionSupplement}>{item.supplement_name}</Text>
+                    </View>
+                    <Text style={styles.questionText}>{item.question}</Text>
+                    <Text style={styles.answerText} numberOfLines={4}>
+                      {item.answer}
+                    </Text>
+                    <View style={styles.questionActionRow}>
+                      <Text style={styles.questionActionText}>Touchez pour lire la reponse complete</Text>
+                      <ArrowRight size={16} color="#2f675c" />
+                    </View>
+                  </TouchableOpacity>
+                ))}
+              </ScrollView>
+
+              <View style={styles.paginationRow}>
+                {questions.map((item, index) => (
+                  <View
+                    key={`dot-${item.id}`}
+                    style={[
+                      styles.paginationDot,
+                      index === activeIndex && styles.paginationDotActive,
+                    ]}
+                  />
+                ))}
+              </View>
+            </View>
+          )}
+
+          <View style={styles.sectionHeader}>
+            <Text style={styles.sectionTitle}>Apercu du suivi</Text>
+          </View>
+
+          {previewError ? (
+            <View style={styles.emptyCard}>
+              <Text style={styles.emptyTitle}>Apercu indisponible</Text>
+              <Text style={styles.emptyText}>{previewError}</Text>
+            </View>
+          ) : trackingPreview ? (
+            <View style={styles.previewCard}>
+              <View style={styles.previewTopRow}>
+                <View>
+                  <Text style={styles.previewBadge}>Aujourd hui</Text>
+                  <Text style={styles.previewTitle}>Votre suivi en bref</Text>
+                </View>
+                <View style={styles.previewProgressPill}>
+                  <Text style={styles.previewProgressText}>{trackingPreview.today_progress}%</Text>
+                </View>
+              </View>
+
+              <View style={styles.previewStatsRow}>
+                <View style={styles.previewStatItem}>
+                  <Target size={15} color="#2f675c" />
+                  <Text style={styles.previewStatValue}>{trackingPreview.today_progress}%</Text>
+                  <Text style={styles.previewStatLabel}>Progression</Text>
+                </View>
+                <View style={styles.previewDivider} />
+                <View style={styles.previewStatItem}>
+                  <Check size={15} color="#2f675c" />
+                  <Text style={styles.previewStatValue}>{trackingPreview.supplements_taken ?? 0}</Text>
+                  <Text style={styles.previewStatLabel}>Pris</Text>
+                </View>
+                <View style={styles.previewDivider} />
+                <View style={styles.previewStatItem}>
+                  <ClipboardList size={15} color="#2f675c" />
+                  <Text style={styles.previewStatValue}>{trackingPreview.supplements_total ?? 0}</Text>
+                  <Text style={styles.previewStatLabel}>Prevus</Text>
+                </View>
+              </View>
+
+              <View style={styles.previewInnerCard}>
+                <Text style={styles.previewInnerTitle}>
+                  {previewRemaining} complement{previewRemaining > 1 ? "s" : ""} restant
+                  {previewRemaining > 1 ? "s" : ""}
+                </Text>
+                {previewPlan.length === 0 ? (
+                  <Text style={styles.previewEmptyText}>Aucun complement planifie pour aujourd hui.</Text>
+                ) : (
+                  <View style={styles.previewList}>
+                    {previewPlan.map((item) => (
+                      <View key={item.id} style={styles.previewListRow}>
+                        <View
+                          style={[
+                            styles.previewListDot,
+                            item.taken && styles.previewListDotDone,
+                          ]}
+                        />
+                        <Text style={styles.previewListText} numberOfLines={1}>
+                          {item.name}
+                        </Text>
+                      </View>
+                    ))}
+                  </View>
+                )}
+              </View>
+
+              <TouchableOpacity
+                style={styles.trackingButton}
+                onPress={onOpenTracking}
+                activeOpacity={0.9}
+              >
+                <Text style={styles.trackingButtonText}>Ouvrir le suivi complet</Text>
+                <ArrowRight size={18} color="white" />
+              </TouchableOpacity>
+            </View>
+          ) : null}
+
+          <TouchableOpacity style={styles.profileButton} onPress={onEditProfile} activeOpacity={0.9}>
+            <View style={styles.profileButtonHeader}>
+              <View>
+                <Text style={styles.profileButtonLabel}>Profil sante</Text>
+                <Text style={styles.profileButtonTitle}>Mettre a jour les informations utiles</Text>
+              </View>
+              <ArrowRight size={18} color="#14272d" />
+            </View>
+            <Text style={styles.profileButtonSubtitle}>
+              Ajustez ce qui influence directement vos recommandations et leurs precautions.
+            </Text>
+            <View style={styles.profileStatsRow}>
+              <View style={styles.profileStatPill}>
+                <Target size={14} color="#2f675c" />
+                <Text style={styles.profileStatText}>
+                  {profileSummary.goalsCount} objectif{profileSummary.goalsCount > 1 ? "s" : ""}
+                </Text>
+              </View>
+              <View style={styles.profileStatPill}>
+                <Activity size={14} color="#2f675c" />
+                <Text style={styles.profileStatText}>{profileSummary.activityLabel}</Text>
+              </View>
+              <View style={styles.profileStatPill}>
+                <Shield size={14} color="#2f675c" />
+                <Text style={styles.profileStatText}>
+                  {profileSummary.safetyCount} vigilance{profileSummary.safetyCount > 1 ? "s" : ""}
+                </Text>
+              </View>
+            </View>
+          </TouchableOpacity>
+        </View>
+      </ScrollView>
+
+      <Modal
+        visible={Boolean(selectedQuestion)}
+        transparent
+        animationType="fade"
+        onRequestClose={() => setSelectedQuestion(null)}
+      >
+        <View style={styles.modalOverlay}>
+          <Pressable style={styles.modalBackdrop} onPress={() => setSelectedQuestion(null)} />
+          <View style={styles.modalCard}>
+            <View style={styles.modalHeader}>
+              <View style={styles.modalHeaderCopy}>
+                <Text style={styles.modalEyebrow}>Question frequente</Text>
+                <Text style={styles.modalTitle}>{selectedQuestion?.question ?? ""}</Text>
+              </View>
+              <TouchableOpacity
+                onPress={() => setSelectedQuestion(null)}
+                style={styles.modalCloseButton}
+                activeOpacity={0.85}
+              >
+                <Text style={styles.modalCloseText}>Fermer</Text>
+              </TouchableOpacity>
+            </View>
+
+            <View style={styles.modalMetaRow}>
+              <View style={styles.modalMetaPill}>
+                <Text style={styles.modalMetaText}>{selectedQuestion?.category ?? ""}</Text>
+              </View>
+              <View style={styles.modalMetaPill}>
+                <Text style={styles.modalMetaText}>{selectedQuestion?.supplement_name ?? ""}</Text>
+              </View>
+            </View>
+
+            <ScrollView
+              style={styles.modalAnswerScroll}
+              contentContainerStyle={styles.modalAnswerContent}
+              showsVerticalScrollIndicator={false}
+            >
+              <Text style={styles.modalAnswerText}>{selectedQuestion?.answer ?? ""}</Text>
+            </ScrollView>
+          </View>
+        </View>
+      </Modal>
+    </View>
   );
 }
 
@@ -481,6 +537,18 @@ const styles = StyleSheet.create({
     color: "rgba(20, 39, 45, 0.78)",
     fontSize: 14,
     lineHeight: 22,
+  },
+  questionActionRow: {
+    flexDirection: "row",
+    alignItems: "center",
+    justifyContent: "space-between",
+    gap: 10,
+  },
+  questionActionText: {
+    flex: 1,
+    color: "#2f675c",
+    fontSize: 12,
+    fontWeight: "700",
   },
   paginationRow: {
     flexDirection: "row",
@@ -707,5 +775,98 @@ const styles = StyleSheet.create({
   errorText: {
     color: "#14272d",
     fontSize: 13,
+  },
+  modalOverlay: {
+    flex: 1,
+    justifyContent: "center",
+    paddingHorizontal: 20,
+    paddingVertical: 32,
+  },
+  modalBackdrop: {
+    ...StyleSheet.absoluteFillObject,
+    backgroundColor: "rgba(20, 39, 45, 0.44)",
+  },
+  modalCard: {
+    width: "100%",
+    maxWidth: 560,
+    alignSelf: "center",
+    backgroundColor: "#fffdf8",
+    borderRadius: 24,
+    padding: 20,
+    gap: 16,
+    borderWidth: 1,
+    borderColor: "rgba(20, 39, 45, 0.08)",
+    shadowColor: "#000",
+    shadowOffset: { width: 0, height: 4 },
+    shadowOpacity: 0.12,
+    shadowRadius: 12,
+    elevation: 6,
+  },
+  modalHeader: {
+    flexDirection: "row",
+    alignItems: "flex-start",
+    justifyContent: "space-between",
+    gap: 12,
+  },
+  modalHeaderCopy: {
+    flex: 1,
+    gap: 6,
+  },
+  modalEyebrow: {
+    color: "#7ea69d",
+    fontSize: 11,
+    fontWeight: "800",
+    textTransform: "uppercase",
+    letterSpacing: 0.8,
+  },
+  modalTitle: {
+    color: "#14272d",
+    fontSize: 22,
+    lineHeight: 30,
+    fontWeight: "800",
+  },
+  modalCloseButton: {
+    minHeight: 36,
+    paddingHorizontal: 14,
+    borderRadius: 999,
+    backgroundColor: "rgba(231, 237, 231, 0.9)",
+    alignItems: "center",
+    justifyContent: "center",
+  },
+  modalCloseText: {
+    color: "#14272d",
+    fontSize: 13,
+    fontWeight: "700",
+  },
+  modalMetaRow: {
+    flexDirection: "row",
+    flexWrap: "wrap",
+    gap: 10,
+  },
+  modalMetaPill: {
+    minHeight: 34,
+    paddingHorizontal: 12,
+    borderRadius: 999,
+    backgroundColor: "rgba(223, 196, 133, 0.2)",
+    borderWidth: 1,
+    borderColor: "rgba(190, 162, 98, 0.24)",
+    alignItems: "center",
+    justifyContent: "center",
+  },
+  modalMetaText: {
+    color: "#2f675c",
+    fontSize: 12,
+    fontWeight: "700",
+  },
+  modalAnswerScroll: {
+    maxHeight: 320,
+  },
+  modalAnswerContent: {
+    paddingBottom: 8,
+  },
+  modalAnswerText: {
+    color: "rgba(20, 39, 45, 0.84)",
+    fontSize: 15,
+    lineHeight: 25,
   },
 });
