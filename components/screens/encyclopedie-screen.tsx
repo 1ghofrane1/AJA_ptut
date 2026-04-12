@@ -25,6 +25,7 @@ import {
     TouchableOpacity,
     View
 } from "react-native";
+import { useSafeAreaInsets } from "react-native-safe-area-context";
 
 type SupplementSummary = EncyclopedieSupplementSummaryResponse;
 type SupplementDetail = EncyclopedieSupplementDetailResponse;
@@ -105,6 +106,7 @@ function AccordionItem({ icon: Icon, title, children }: AccordionItemProps) {
 }
 
 export function EncyclopedieScreen() {
+  const insets = useSafeAreaInsets();
   const [searchQuery, setSearchQuery] = useState("");
   const [selectedCategory, setSelectedCategory] = useState<string | null>(null);
 
@@ -182,7 +184,10 @@ export function EncyclopedieScreen() {
     return (
       <ScrollView className="flex-1 bg-aja-cream" style={styles.container} contentContainerStyle={styles.contentContainer}>
         {/* Header */}
-        <View className="rounded-b-3xl bg-aja-ink px-6 py-6" style={styles.header}>
+        <View
+          className="rounded-b-3xl bg-aja-ink px-6 py-6"
+          style={[styles.header, { paddingTop: insets.top + 20 }]}
+        >
           <View style={styles.headerTopRow}>
             <TouchableOpacity
               onPress={() => setSelectedSupplement(null)}
@@ -264,7 +269,10 @@ export function EncyclopedieScreen() {
   return (
     <ScrollView className="flex-1 bg-aja-cream" style={styles.container} contentContainerStyle={styles.contentContainer}>
       {/* Header */}
-      <View className="rounded-b-3xl bg-aja-ink px-6 py-6" style={styles.header}>
+      <View
+        className="rounded-b-3xl bg-aja-ink px-6 py-6"
+        style={[styles.header, { paddingTop: insets.top + 20 }]}
+      >
         <View style={styles.headerTopRow}>
           <View style={{ flex: 1 }}>
             <Text style={styles.headerTitle}>Encyclopédie</Text>

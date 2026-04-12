@@ -39,6 +39,7 @@ import {
   TouchableOpacity,
   View,
 } from "react-native";
+import { useSafeAreaInsets } from "react-native-safe-area-context";
 
 type Timing = "morning" | "evening" | "both" | "unspecified";
 
@@ -520,6 +521,7 @@ function extractApiErrorMessage(error: any) {
 
 export function RecommendationsScreen() {
   const { token, user } = useAuth();
+  const insets = useSafeAreaInsets();
   const [expandedId, setExpandedId] = useState<string | null>(null);
   const [selectedObjectiveKey, setSelectedObjectiveKey] = useState<
     string | null
@@ -905,7 +907,10 @@ export function RecommendationsScreen() {
       style={styles.container}
       contentContainerStyle={styles.contentContainer}
     >
-      <View className="rounded-b-3xl bg-aja-ink px-6 py-6" style={styles.header}>
+      <View
+        className="rounded-b-3xl bg-aja-ink px-6 py-6"
+        style={[styles.header, { paddingTop: insets.top + 20 }]}
+      >
         <View style={styles.headerTopRow}>
           <View style={{ flex: 1 }}>
             <Text style={styles.headerTitle}>Recommandations</Text>

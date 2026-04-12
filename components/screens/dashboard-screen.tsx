@@ -13,6 +13,7 @@ import {
   View,
   useWindowDimensions,
 } from "react-native";
+import { useSafeAreaInsets } from "react-native-safe-area-context";
 
 interface DashboardScreenProps {
   onEditProfile?: () => void;
@@ -25,6 +26,7 @@ export function DashboardScreen({
 }: DashboardScreenProps) {
   const { user, token } = useAuth();
   const { width: windowWidth } = useWindowDimensions();
+  const insets = useSafeAreaInsets();
 
   const carouselRef = useRef<ScrollView | null>(null);
   const activeIndexRef = useRef(0);
@@ -173,7 +175,7 @@ export function DashboardScreen({
       contentContainerStyle={styles.contentContainer}
       showsVerticalScrollIndicator={false}
     >
-      <View style={styles.hero}>
+      <View style={[styles.hero, { paddingTop: insets.top + 14 }]}>
         <View style={styles.heroTopRow}>
           <View style={styles.heroBadge}>
             <Sparkles size={14} color="#14272d" />

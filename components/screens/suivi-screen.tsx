@@ -35,6 +35,7 @@ import {
   View,
   useWindowDimensions,
 } from "react-native";
+import { useSafeAreaInsets } from "react-native-safe-area-context";
 import Svg, { Circle } from "react-native-svg";
 
 type Segment = "today" | "trends" | "history";
@@ -227,6 +228,7 @@ type SuiviScreenProps = {
 
 export function SuiviScreen({ onOpenRecommendations }: SuiviScreenProps) {
   const { user } = useAuth();
+  const insets = useSafeAreaInsets();
   const { width: windowWidth, height: windowHeight } = useWindowDimensions();
   const isCompactTrendChart = windowWidth < 390;
   const trendChartWidth = Math.max(216, Math.min(windowWidth - (isCompactTrendChart ? 138 : 124), 420));
@@ -723,7 +725,10 @@ export function SuiviScreen({ onOpenRecommendations }: SuiviScreenProps) {
   return (
     <View className="flex-1 bg-aja-cream" style={styles.container}>
       <ScrollView className="flex-1 bg-aja-cream" style={styles.container} contentContainerStyle={styles.contentContainer}>
-        <View className="rounded-b-3xl bg-aja-ink px-6 pt-6 pb-5" style={styles.header}>
+        <View
+          className="rounded-b-3xl bg-aja-ink px-6 pt-6 pb-5"
+          style={[styles.header, { paddingTop: insets.top + 18 }]}
+        >
           <View style={styles.headerTopRow}>
             <View style={{ flex: 1 }}>
               <Text style={styles.headerTitle}>Suivi</Text>

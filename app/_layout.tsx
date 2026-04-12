@@ -11,6 +11,7 @@ import { AuthProvider, useAuth } from "@/context/auth";
 import { type UserResponse } from "@/services/api";
 import { QueryClient, QueryClientProvider } from "@tanstack/react-query";
 import { useEffect, useState } from "react";
+import { SafeAreaProvider } from "react-native-safe-area-context";
 import {
   ActivityIndicator,
   StyleSheet,
@@ -58,11 +59,13 @@ export default function App() {
   );
 
   return (
-    <QueryClientProvider client={queryClient}>
-      <AuthProvider>
-        <RootApp />
-      </AuthProvider>
-    </QueryClientProvider>
+    <SafeAreaProvider>
+      <QueryClientProvider client={queryClient}>
+        <AuthProvider>
+          <RootApp />
+        </AuthProvider>
+      </QueryClientProvider>
+    </SafeAreaProvider>
   );
 }
 function RootApp() {

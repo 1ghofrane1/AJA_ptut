@@ -39,9 +39,12 @@ export function LoginScreen({ onNavigate }: LoginScreenProps) {
       await loginWithEmail(email.trim(), password);
       onNavigate("dashboard");
     } catch (e: any) {
+      const isNetworkError = !e?.response;
       Alert.alert(
         "Connexion impossible",
-        e?.response?.data?.detail ?? "Erreur de connexion",
+        isNetworkError
+          ? "Le backend est inaccessible. Verifiez que votre telephone et votre PC sont sur le meme Wi-Fi, puis lancez FastAPI avec --host 0.0.0.0."
+          : e?.response?.data?.detail ?? "Erreur de connexion",
       );
     } finally {
       setLoading(false);

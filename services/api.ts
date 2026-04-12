@@ -1,8 +1,59 @@
 import AsyncStorage from "@react-native-async-storage/async-storage";
+import Constants from "expo-constants";
 import axios from "axios";
+import { Platform } from "react-native";
 
-// Use environment variable if available, fallback to localhost
-export const API_BASE_URL = process.env.EXPO_PUBLIC_API_URL || "http://127.0.0.1:8000";
+function parseHostCandidate(value?: string | null) {
+  const raw = (value ?? "").trim();
+  if (!raw) return null;
+
+  const withoutScheme = raw.replace(/^[a-z]+:\/\//i, "");
+  const withoutPath = withoutScheme.split("/")[0] ?? "";
+  const host = withoutPath.split(":")[0]?.trim() ?? "";
+  if (!host) return null;
+
+  return host;
+}
+
+function isReachableDevHost(host: string) {
+  if (!host) return false;
+  if (/^(?:\d{1,3}\.){3}\d{1,3}$/.test(host)) return true;
+  if (host.includes(".")) return true;
+  return false;
+}
+
+function resolveExpoDevHost() {
+  const candidates = [
+    Constants.expoConfig?.hostUri,
+    Constants.linkingUri,
+  ];
+
+  for (const candidate of candidates) {
+    const host = parseHostCandidate(candidate);
+    if (!host) continue;
+    if (host === "localhost" || host === "127.0.0.1") continue;
+    if (!isReachableDevHost(host)) continue;
+    return host;
+  }
+
+  return null;
+}
+
+function resolveApiBaseUrl() {
+  const explicitUrl = process.env.EXPO_PUBLIC_API_URL?.trim();
+  if (explicitUrl) return explicitUrl;
+
+  if (Platform.OS !== "web") {
+    const expoHost = resolveExpoDevHost();
+    if (expoHost) {
+      return `http://${expoHost}:8000`;
+    }
+  }
+
+  return "http://127.0.0.1:8000";
+}
+
+export const API_BASE_URL = resolveApiBaseUrl();
 export const TOKEN_KEY = "aja_token";
 
 export const api = axios.create({

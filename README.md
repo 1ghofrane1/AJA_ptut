@@ -32,7 +32,7 @@ A React Native + Expo app for personalized supplement recommendations, onboardin
 ### 1. Start the official backend
 ```powershell
 cd d:\ptut\Experta
-python -m uvicorn api:app --reload --host 127.0.0.1 --port 8000
+python -m uvicorn api:app --reload --host 0.0.0.0 --port 8000
 ```
 
 ### 2. Start the frontend
@@ -46,6 +46,9 @@ The frontend uses `EXPO_PUBLIC_API_URL` when provided, otherwise it falls back t
 ```txt
 http://127.0.0.1:8000
 ```
+
+On Expo Go mobile, the app now tries to infer your computer LAN IP from the Expo dev server and uses `http://<your-local-ip>:8000`.
+Your phone and computer still need to be on the same Wi-Fi, and the backend must listen on `0.0.0.0`.
 
 ## Current app flow
 

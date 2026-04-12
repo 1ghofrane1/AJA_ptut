@@ -197,7 +197,8 @@ export function getSignupErrorAlert(error: unknown): SignupAlert {
   ) {
     return {
       title: "Reseau indisponible",
-      message: "Verifiez votre connexion puis reessayez.",
+      message:
+        "Le backend est inaccessible. Verifiez que votre telephone et votre PC sont sur le meme Wi-Fi, puis lancez FastAPI avec --host 0.0.0.0.",
     };
   }
 
