@@ -2,7 +2,6 @@ import {
   Activity,
   AlertCircle,
   Apple,
-  ArrowLeft,
   Baby,
   Brain,
   CalendarDays,
@@ -26,6 +25,7 @@ import {
 import {
   type ComponentType,
   type ReactNode,
+  useCallback,
   useEffect,
   useMemo,
   useRef,
@@ -35,7 +35,7 @@ import {
   ActivityIndicator,
   Alert,
   Animated,
-  Image,
+  PanResponder,
   ScrollView,
   StyleSheet,
   Text,
@@ -1754,7 +1754,7 @@ export function OnboardingScreen({
     }
   };
 
-  const handleBack = () => {
+  const handleBack = useCallback(() => {
     if (isGoalsOnly || (isProfileEdit && step === 1)) {
       onNavigate("dashboard");
       return;
@@ -1771,7 +1771,30 @@ export function OnboardingScreen({
     } else if (step > 1) {
       setStep(step - 1);
     }
-  };
+  }, [formData.sex, isGoalsOnly, isProfileEdit, onNavigate, step]);
+
+  const canSwipeBack = !saving && (isGoalsOnly || isProfileEdit || step > 1);
+  const edgeSwipeResponder = useMemo(
+    () =>
+      PanResponder.create({
+        onMoveShouldSetPanResponder: (_, gestureState) =>
+          canSwipeBack &&
+          gestureState.dx > 14 &&
+          Math.abs(gestureState.dx) > Math.abs(gestureState.dy) * 1.2,
+        onPanResponderRelease: (_, gestureState) => {
+          if (!canSwipeBack) return;
+
+          const shouldGoBack =
+            gestureState.dx > 72 ||
+            (gestureState.dx > 28 && gestureState.vx > 0.55);
+
+          if (shouldGoBack && Math.abs(gestureState.dy) < 80) {
+            handleBack();
+          }
+        },
+      }),
+    [canSwipeBack, handleBack],
+  );
 
   const toggleMultiSelection = (
     field: "goals" | "conditions" | "diseases" | "allergies",
@@ -1806,82 +1829,11 @@ export function OnboardingScreen({
 
   return (
     <View className="flex-1 bg-aja-cream" style={styles.container}>
-      <View style={styles.topRow}>
-        <TouchableOpacity
-          onPress={handleBack}
-          style={[
-            styles.backButton,
-            !isGoalsOnly && !isProfileEdit && step === 1 && styles.backButtonHidden,
-          ]}
-          disabled={saving || (!isGoalsOnly && !isProfileEdit && step === 1)}
-          activeOpacity={0.85}
-        >
-          <ArrowLeft size={22} color="#14272d" />
-        </TouchableOpacity>
-      </View>
-
-      <View style={styles.headerIntro}>
-        <LinearGradient
-          colors={["#17363a", "#27534d", "#7ea69d"]}
-          start={{ x: 0, y: 0 }}
-          end={{ x: 1, y: 1 }}
-          style={[styles.heroCard, isWide && styles.heroCardWide]}
-        >
-          <View style={styles.heroGlowOne} />
-          <View style={styles.heroGlowTwo} />
-          
-
-          <View style={styles.heroTopRow}>
-            <View style={styles.heroEyebrow}>
-              <Text style={styles.heroEyebrowText}>{hero.eyebrow}</Text>
-            </View>
-            <View style={styles.heroBadge}>
-              <Text style={styles.heroBadgeText}>
-                {isGoalsOnly
-                  ? "Objectifs"
-                  : isProfileEdit
-                    ? `Profil ${displayStep}/${totalSteps}`
-                    : `Etape ${displayStep}/${totalSteps}`}
-              </Text>
-            </View>
-          </View>
-
-          <View style={styles.heroContent}>
-            <Text style={styles.heroTitle}>{hero.title}</Text>
-            <Text style={styles.heroSubtitle}>{hero.subtitle}</Text>
-          </View>
-
-          <View style={styles.heroProgressRow}>
-            <View style={styles.heroProgressCopy}>
-              <Text style={styles.heroProgressLabel}>Progression</Text>
-              <Text style={styles.heroProgressHint}>
-                {Math.round(progress) === 0
-                  ? "Renseignez vos premieres informations pour commencer."
-                  : isProfileEdit
-                    ? `Vos recommandations resteront alignees, etape ${displayStep} sur ${totalSteps}.`
-                    : `Votre profil prend forme, etape ${displayStep} sur ${totalSteps}.`}
-              </Text>
-            </View>
-            <View style={styles.heroMiniCard}>
-              <Text style={styles.heroMiniLabel}>Avancement</Text>
-              <Text style={styles.heroMiniValue}>{Math.round(progress)}%</Text>
-            </View>
-          </View>
-
-          <View style={styles.progressTrackCompact}>
-            <Animated.View
-              style={[styles.progressFillAnimated, { width: animatedProgressWidth }]}
-            >
-              <LinearGradient
-                colors={["#f7e3aa", "#ffffff"]}
-                start={{ x: 0, y: 0 }}
-                end={{ x: 1, y: 0 }}
-                style={styles.progressFillCompact}
-              />
-            </Animated.View>
-          </View>
-        </LinearGradient>
-      </View>
+      <View
+        style={styles.edgeSwipeZone}
+        pointerEvents={canSwipeBack ? "auto" : "none"}
+        {...edgeSwipeResponder.panHandlers}
+      />
 
       {/* Content */}
       <ScrollView
@@ -1889,6 +1841,60 @@ export function OnboardingScreen({
         style={styles.scrollView}
         contentContainerStyle={styles.scrollContent}
       >
+        <View style={styles.headerIntro}>
+          <View style={[styles.heroCard, isWide && styles.heroCardWide]}>
+            <View style={styles.heroTopRow}>
+              <View style={styles.heroEyebrow}>
+                <Text style={styles.heroEyebrowText}>{hero.eyebrow}</Text>
+              </View>
+              <View style={styles.heroBadge}>
+                <Text style={styles.heroBadgeText}>
+                  {isGoalsOnly
+                    ? "Objectifs"
+                    : isProfileEdit
+                      ? `Profil ${displayStep}/${totalSteps}`
+                      : `Etape ${displayStep}/${totalSteps}`}
+                </Text>
+              </View>
+            </View>
+
+            <View style={styles.heroContent}>
+              <Text style={styles.heroTitle}>{hero.title}</Text>
+              <Text style={styles.heroSubtitle}>{hero.subtitle}</Text>
+            </View>
+
+            <View style={styles.heroProgressRow}>
+              <View style={styles.heroProgressCopy}>
+                <Text style={styles.heroProgressLabel}>Progression</Text>
+                <Text style={styles.heroProgressHint}>
+                  {Math.round(progress) === 0
+                    ? "Renseignez vos premieres informations pour commencer."
+                    : isProfileEdit
+                      ? `Vos recommandations resteront alignees, etape ${displayStep} sur ${totalSteps}.`
+                      : `Votre profil prend forme, etape ${displayStep} sur ${totalSteps}.`}
+                </Text>
+              </View>
+              <View style={styles.heroMiniCard}>
+                <Text style={styles.heroMiniLabel}>Avancement</Text>
+                <Text style={styles.heroMiniValue}>{Math.round(progress)}%</Text>
+              </View>
+            </View>
+
+            <View style={styles.progressTrackCompact}>
+              <Animated.View
+                style={[styles.progressFillAnimated, { width: animatedProgressWidth }]}
+              >
+                <LinearGradient
+                  colors={["#f7e3aa", "#ffffff"]}
+                  start={{ x: 0, y: 0 }}
+                  end={{ x: 1, y: 0 }}
+                  style={styles.progressFillCompact}
+                />
+              </Animated.View>
+            </View>
+          </View>
+        </View>
+
         {isProfileEdit && step === 1 && (
           <SectionFrame
             icon={Target}
@@ -2759,10 +2765,7 @@ export function OnboardingScreen({
             </View>
           </SectionFrame>
         )}
-      </ScrollView>
-
-      <View style={styles.bottomBar}>
-        <View style={styles.bottomShell}>
+        <View style={styles.ctaInlineWrap}>
           <View style={styles.ctaWrap}>
             <TouchableOpacity
               onPress={handleNext}
@@ -2785,7 +2788,7 @@ export function OnboardingScreen({
             </TouchableOpacity>
           </View>
         </View>
-      </View>
+      </ScrollView>
     </View>
   );
 }
@@ -2830,7 +2833,7 @@ const styles = StyleSheet.create({
   },
   scrollContent: {
     paddingHorizontal: 24,
-    paddingBottom: 16,
+    paddingBottom: 24,
   },
   stepContainer: {
     gap: 32,
@@ -3116,7 +3119,7 @@ const styles = StyleSheet.create({
     letterSpacing: 0.4,
   },
   headerIntro: {
-    marginBottom: 16,
+    marginBottom: 14,
   },
   compactHeaderCard: {
     borderRadius: 28,
@@ -3227,7 +3230,7 @@ const styles = StyleSheet.create({
   },
   progressTrackCompact: {
     width: "100%",
-    height: 12,
+    height: 10,
     borderRadius: 999,
     backgroundColor: "rgba(255,255,255,0.18)",
     overflow: "hidden",
@@ -3245,28 +3248,23 @@ const styles = StyleSheet.create({
   heroCard: {
     position: "relative",
     overflow: "hidden",
-    borderRadius: 30,
-    paddingTop: 14,
-    paddingHorizontal: 18,
-    paddingBottom: 16,
-    minHeight: 190,
-    borderWidth: 1,
-    borderColor: "rgba(255,255,255,0.12)",
-    shadowColor: "#17363a",
-    shadowOffset: { width: 0, height: 10 },
-    shadowOpacity: 0.16,
-    shadowRadius: 22,
-    elevation: 6,
+    backgroundColor: "#14272d",
+    borderBottomLeftRadius: 28,
+    borderBottomRightRadius: 28,
+    paddingTop: 22,
+    paddingHorizontal: 24,
+    paddingBottom: 20,
+    minHeight: 0,
   },
   heroCardWide: {
-    paddingHorizontal: 22,
-    paddingTop: 16,
-    paddingBottom: 18,
+    paddingHorizontal: 28,
+    paddingTop: 24,
+    paddingBottom: 22,
   },
   heroContent: {
-    gap: 8,
-    paddingRight: 52,
-    marginBottom: 12,
+    gap: 6,
+    paddingRight: 28,
+    marginBottom: 14,
     zIndex: 2,
   },
   heroTopRow: {
@@ -3274,47 +3272,49 @@ const styles = StyleSheet.create({
     alignItems: "center",
     justifyContent: "space-between",
     gap: 12,
-    marginBottom: 12,
+    marginBottom: 8,
     zIndex: 2,
   },
   heroEyebrow: {
     alignSelf: "flex-start",
+    flexDirection: "row",
+    alignItems: "center",
     paddingHorizontal: 12,
-    paddingVertical: 6,
+    height: 30,
     borderRadius: 999,
-    backgroundColor: "rgba(255,255,255,0.18)",
+    backgroundColor: "#dfc485",
   },
   heroEyebrowText: {
-    color: "#ffffff",
-    fontSize: 11,
+    color: "#14272d",
+    fontSize: 12,
     fontWeight: "800",
-    letterSpacing: 0.9,
+    letterSpacing: 0.4,
     textTransform: "uppercase",
   },
   heroTitle: {
-    fontSize: 30,
+    fontSize: 28,
     lineHeight: 34,
     fontWeight: "800",
     color: "#ffffff",
-    letterSpacing: -0.9,
+    letterSpacing: -0.8,
   },
   heroSubtitle: {
-    maxWidth: 520,
-    fontSize: 13,
-    lineHeight: 20,
-    color: "rgba(255,255,255,0.84)",
+    maxWidth: 480,
+    fontSize: 14,
+    lineHeight: 22,
+    color: "#b3d3d2",
   },
   heroBadge: {
-    paddingHorizontal: 12,
-    paddingVertical: 8,
+    paddingHorizontal: 11,
+    paddingVertical: 7,
     borderRadius: 999,
-    backgroundColor: "rgba(255,255,255,0.14)",
+    backgroundColor: "rgba(255,255,255,0.12)",
     borderWidth: 1,
-    borderColor: "rgba(255,255,255,0.16)",
+    borderColor: "rgba(255,255,255,0.2)",
   },
   heroBadgeText: {
     color: "#ffffff",
-    fontSize: 12,
+    fontSize: 11,
     fontWeight: "700",
   },
   heroLogo: {
@@ -3334,67 +3334,57 @@ const styles = StyleSheet.create({
     borderWidth: 1,
     borderColor: "rgba(255,255,255,0.08)",
   },
-  heroGlowOne: {
-    position: "absolute",
-    width: 132,
-    height: 132,
-    borderRadius: 999,
-    backgroundColor: "rgba(246, 219, 160, 0.14)",
-    top: -50,
-    right: 12,
-  },
-  heroGlowTwo: {
-    position: "absolute",
-    width: 106,
-    height: 106,
-    borderRadius: 999,
-    backgroundColor: "rgba(255,255,255,0.08)",
-    bottom: -42,
-    left: -14,
-  },
   heroProgressRow: {
     flexDirection: "row",
-    alignItems: "flex-end",
+    alignItems: "center",
     justifyContent: "space-between",
-    gap: 14,
-    marginBottom: 10,
+    gap: 12,
+    marginBottom: 8,
     zIndex: 2,
   },
   heroProgressCopy: {
     flex: 1,
-    gap: 4,
-    paddingRight: 12,
+    gap: 3,
+    paddingRight: 10,
   },
   heroProgressLabel: {
-    fontSize: 13,
+    fontSize: 12,
     fontWeight: "800",
     color: "#ffffff",
   },
   heroProgressHint: {
-    fontSize: 11,
-    lineHeight: 16,
-    color: "rgba(255,255,255,0.74)",
+    fontSize: 12,
+    lineHeight: 18,
+    color: "#b3d3d2",
   },
   heroMiniCard: {
-    minWidth: 84,
-    borderRadius: 16,
-    backgroundColor: "rgba(255,255,255,0.14)",
-    paddingVertical: 8,
-    paddingHorizontal: 10,
+    minWidth: 74,
+    borderRadius: 14,
+    backgroundColor: "rgba(255,255,255,0.12)",
+    paddingVertical: 7,
+    paddingHorizontal: 9,
     borderWidth: 1,
-    borderColor: "rgba(255,255,255,0.12)",
+    borderColor: "rgba(255,255,255,0.18)",
     alignItems: "center",
   },
   heroMiniLabel: {
     color: "rgba(255,255,255,0.76)",
-    fontSize: 11,
+    fontSize: 10,
     fontWeight: "600",
   },
   heroMiniValue: {
     color: "#ffffff",
-    fontSize: 15,
+    fontSize: 14,
     fontWeight: "800",
     marginTop: 2,
+  },
+  edgeSwipeZone: {
+    position: "absolute",
+    left: 0,
+    top: 0,
+    bottom: 0,
+    width: 28,
+    zIndex: 20,
   },
   progressCard: {
     borderRadius: 26,
@@ -4093,17 +4083,9 @@ const styles = StyleSheet.create({
     color: "#14272d",
     fontWeight: "700",
   },
-  bottomBar: {
-    paddingHorizontal: 20,
-    paddingTop: 4,
-    paddingBottom: 12,
-  },
-  bottomShell: {
-    width: "100%",
-    maxWidth: 760,
-    alignSelf: "center",
-    paddingHorizontal: 0,
-    paddingVertical: 0,
+  ctaInlineWrap: {
+    marginTop: 18,
+    marginBottom: 4,
   },
   ctaWrap: {
     borderRadius: 16,

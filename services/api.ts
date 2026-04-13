@@ -23,9 +23,24 @@ function isReachableDevHost(host: string) {
 }
 
 function resolveExpoDevHost() {
+  const expoGoConfig = (
+    Constants as typeof Constants & {
+      expoGoConfig?: { debuggerHost?: string | null } | null;
+      manifest2?: {
+        extra?: {
+          expoClient?: { hostUri?: string | null };
+          expoGo?: { debuggerHost?: string | null };
+        };
+      } | null;
+    }
+  );
+
   const candidates = [
+    expoGoConfig.expoGoConfig?.debuggerHost,
     Constants.expoConfig?.hostUri,
     Constants.linkingUri,
+    expoGoConfig.manifest2?.extra?.expoClient?.hostUri,
+    expoGoConfig.manifest2?.extra?.expoGo?.debuggerHost,
   ];
 
   for (const candidate of candidates) {
