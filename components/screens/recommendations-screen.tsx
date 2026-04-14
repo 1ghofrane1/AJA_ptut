@@ -42,6 +42,7 @@ import {
 import { useSafeAreaInsets } from "react-native-safe-area-context";
 
 type Timing = "morning" | "evening" | "both" | "unspecified";
+type RecommendationGradeSource = "explicit" | "inferred" | "none";
 
 type Supplement = {
   id: string;
@@ -52,6 +53,13 @@ type Supplement = {
   molecules: string[];
   warnings?: string;
   taken: boolean;
+  coveredSymptoms: string[];
+  score: number;
+  scoreSymptoms: number;
+  grade: string;
+  gradeScore: number;
+  gradeSource: RecommendationGradeSource;
+  categoryType: string;
 };
 
 type ObjectivePlan = {
@@ -252,6 +260,82 @@ function inferTiming(value: unknown): Timing {
   return "unspecified";
 }
 
+function toInt(value: unknown, fallback = 0) {
+  if (typeof value === "number" && Number.isFinite(value)) {
+    return Math.trunc(value);
+  }
+  if (typeof value === "string" && value.trim()) {
+    const parsed = Number(value);
+    if (Number.isFinite(parsed)) return Math.trunc(parsed);
+  }
+  return fallback;
+}
+
+function normalizeRecommendationGrade(value: unknown) {
+  if (typeof value !== "string") return "";
+  const normalized = value.trim().toUpperCase();
+  return ["A", "B", "C", "D"].includes(normalized) ? normalized : "";
+}
+
+function gradeToScore(grade: string) {
+  switch (normalizeRecommendationGrade(grade)) {
+    case "A":
+      return 4;
+    case "B":
+      return 3;
+    case "C":
+      return 2;
+    case "D":
+      return 1;
+    default:
+      return 0;
+  }
+}
+
+function normalizeRecommendationGradeSource(
+  value: unknown,
+): RecommendationGradeSource {
+  if (value === "explicit" || value === "inferred" || value === "none") {
+    return value;
+  }
+  return "none";
+}
+
+function formatGradeSource(source: RecommendationGradeSource) {
+  switch (source) {
+    case "explicit":
+      return "Grade explicite";
+    case "inferred":
+      return "Grade estime";
+    default:
+      return "Grade indisponible";
+  }
+}
+
+function formatCoverageLabel(scoreSymptoms: number) {
+  return `${scoreSymptoms} symptome${scoreSymptoms > 1 ? "s" : ""} couvert${scoreSymptoms > 1 ? "s" : ""}`;
+}
+
+function extractRecommendationObjectiveKeys(recommendation: AnyRecord) {
+  const explicitObjective = firstString(
+    recommendation.objectif,
+    recommendation.goal,
+    recommendation.objective,
+    recommendation.cible,
+    recommendation.target_goal,
+  );
+
+  return dedupeKeepOrder(
+    [
+      ...toStringArray(recommendation.symptomes_couverts),
+      ...toStringArray(recommendation.covered_symptoms),
+      ...toStringArray(recommendation.objectifs),
+      ...toStringArray(recommendation.goals),
+      ...(explicitObjective ? [explicitObjective] : []),
+    ].filter(Boolean),
+  );
+}
+
 function mapRawRecommendationToSupplement(
   raw: AnyRecord,
   objectiveKey: string,
@@ -308,6 +392,16 @@ function mapRawRecommendationToSupplement(
 
   const rawId = firstString(raw.id, raw._id, raw.code) ?? String(index);
   const id = `${normalizeObjectiveKey(objectiveKey)}::${rawId}`;
+  const grade = normalizeRecommendationGrade(raw.grade);
+  const scoreSymptoms = toInt(
+    raw.score_symptomes ?? raw.score,
+    coveredSymptoms.length,
+  );
+  const gradeScore = toInt(raw.grade_score, gradeToScore(grade));
+  const gradeSource = normalizeRecommendationGradeSource(raw.grade_source);
+  const categoryType =
+    firstString(raw.category_type, raw.categoryType, raw.type) ??
+    "recommendation";
 
   return {
     id,
@@ -318,6 +412,13 @@ function mapRawRecommendationToSupplement(
     molecules,
     warnings: warnings ?? undefined,
     taken: Boolean(raw.taken ?? raw.is_taken),
+    coveredSymptoms,
+    score: toInt(raw.score, scoreSymptoms),
+    scoreSymptoms,
+    grade,
+    gradeScore,
+    gradeSource,
+    categoryType,
   };
 }
 
@@ -399,23 +500,7 @@ function extractGroupedRecommendations(data: unknown) {
   const groupedFromFlat: Record<string, AnyRecord[]> = {};
 
   for (const recommendation of extractFlatRecommendations(root)) {
-    const explicitObjective = firstString(
-      recommendation.objectif,
-      recommendation.goal,
-      recommendation.objective,
-      recommendation.cible,
-      recommendation.target_goal,
-    );
-
-    const objectiveKeys = dedupeKeepOrder(
-      [
-        ...toStringArray(recommendation.symptomes_couverts),
-        ...toStringArray(recommendation.covered_symptoms),
-        ...toStringArray(recommendation.objectifs),
-        ...toStringArray(recommendation.goals),
-        ...(explicitObjective ? [explicitObjective] : []),
-      ].filter(Boolean),
-    );
+    const objectiveKeys = extractRecommendationObjectiveKeys(recommendation);
 
     const targets =
       objectiveKeys.length > 0
@@ -473,6 +558,76 @@ function extractSavedRecommendationId(data: unknown): string | null {
     root.id,
   );
   return id ?? null;
+}
+
+function extractBestRecommendation(data: unknown) {
+  const root = asRecord(data);
+  if (!root) return null;
+
+  const decision = asRecord(root.decision) ?? {};
+  const rawBest =
+    asRecord(decision.best_decision) ?? asRecord(root.best_decision);
+  if (!rawBest) return null;
+
+  const objectiveKeys = extractRecommendationObjectiveKeys(rawBest).map((value) =>
+    normalizeObjectiveKey(value),
+  );
+  const objectiveKey =
+    objectiveKeys.find(Boolean) ??
+    normalizeObjectiveKey(
+      firstString(rawBest.goal, rawBest.objectif, rawBest.objective) ?? "autres",
+    ) ??
+    "autres";
+
+  const complementTakenTimes = Array.isArray(rawBest.complement_taken_times)
+    ? rawBest.complement_taken_times
+        .filter((value): value is string => typeof value === "string" && value.trim().length > 0)
+        .slice(0, 5)
+    : [];
+
+  return {
+    supplement: mapRawRecommendationToSupplement(rawBest, objectiveKey, 0),
+    objectiveKeys: objectiveKeys.filter(Boolean),
+    complementTakenTimes,
+  };
+}
+
+function extractBestRecommendationForGoal(
+  data: unknown,
+  objectiveKey: string,
+) {
+  const root = asRecord(data);
+  if (!root) return null;
+
+  const decision = asRecord(root.decision) ?? {};
+  const bestByGoal =
+    asRecord(decision.best_decision_by_goal) ??
+    asRecord(root.best_decision_by_goal);
+  if (!bestByGoal) return null;
+
+  for (const [goalKey, rawItem] of Object.entries(bestByGoal)) {
+    if (normalizeObjectiveKey(goalKey) !== objectiveKey) continue;
+
+    const bestItem = asRecord(rawItem);
+    if (!bestItem) return null;
+
+    const complementTakenTimes = Array.isArray(bestItem.complement_taken_times)
+      ? bestItem.complement_taken_times
+          .filter(
+            (value): value is string =>
+              typeof value === "string" && value.trim().length > 0,
+          )
+          .slice(0, 5)
+      : [];
+
+    return {
+      supplement: mapRawRecommendationToSupplement(bestItem, objectiveKey, 0),
+      objectiveKeys: [objectiveKey],
+      complementTakenTimes,
+    };
+  }
+
+  return null;
 }
 
 function formatHistoryDateTime(isoTimestamp: string) {
@@ -660,6 +815,40 @@ export function RecommendationsScreen({
       } satisfies ObjectivePlan;
     }).filter((plan) => plan.supplements.length > 0);
   }, [decisionData, objectives]);
+
+  const bestRecommendation = useMemo(() => {
+    if (selectedObjectiveKey) {
+      const bestForGoal = extractBestRecommendationForGoal(
+        decisionData,
+        selectedObjectiveKey,
+      );
+      if (bestForGoal) return bestForGoal;
+
+      const selectedPlan = objectivePlans.find(
+        (plan) => normalizeObjectiveKey(plan.key) === selectedObjectiveKey,
+      );
+      if (selectedPlan?.supplements.length) {
+        return {
+          supplement: selectedPlan.supplements[0],
+          objectiveKeys: [selectedObjectiveKey],
+          complementTakenTimes: [],
+        };
+      }
+      return null;
+    }
+
+    const globalBest = extractBestRecommendation(decisionData);
+    if (globalBest) return globalBest;
+
+    const firstPlan = objectivePlans.find((plan) => plan.supplements.length > 0);
+    if (!firstPlan) return null;
+
+    return {
+      supplement: firstPlan.supplements[0],
+      objectiveKeys: [normalizeObjectiveKey(firstPlan.key)],
+      complementTakenTimes: [],
+    };
+  }, [decisionData, objectivePlans, selectedObjectiveKey]);
 
   useEffect(() => {
     if (!selectedObjectiveKey) return;
@@ -1013,6 +1202,63 @@ export function RecommendationsScreen({
           </View>
         )}
 
+        {!loading && !error && bestRecommendation && (
+          <View style={styles.bestCard}>
+            <Text style={styles.bestTitle}>
+              {selectedObjectiveLabel
+                ? "Meilleure recommandation pour cet objectif"
+                : "Meilleure recommandation"}
+            </Text>
+            <Text style={styles.bestProduct}>{bestRecommendation.supplement.name}</Text>
+            <View style={styles.bestMetaRow}>
+              <View style={styles.bestBadge}>
+                <Text style={styles.bestBadgeText}>
+                  {formatCoverageLabel(bestRecommendation.supplement.scoreSymptoms)}
+                </Text>
+              </View>
+              {bestRecommendation.supplement.grade ? (
+                <View style={styles.bestBadge}>
+                  <Text style={styles.bestBadgeText}>
+                    Grade {bestRecommendation.supplement.grade}
+                  </Text>
+                </View>
+              ) : null}
+              <View style={styles.bestBadge}>
+                <Text style={styles.bestBadgeText}>
+                  {formatGradeSource(bestRecommendation.supplement.gradeSource)}
+                </Text>
+              </View>
+            </View>
+
+            {bestRecommendation.supplement.coveredSymptoms.length > 0 && (
+              <View style={styles.bestMetaRow}>
+                {bestRecommendation.supplement.coveredSymptoms.map((symptom) => (
+                  <View
+                    key={`best-${bestRecommendation.supplement.id}-${symptom}`}
+                    style={styles.bestSymptomBadge}
+                  >
+                    <Text style={styles.bestSymptomText}>{symptom}</Text>
+                  </View>
+                ))}
+              </View>
+            )}
+
+            {bestRecommendation.complementTakenTimes.length > 0 && (
+              <View style={styles.bestTimesSection}>
+                <Text style={styles.bestTimesTitle}>Dernieres prises enregistrees</Text>
+                {bestRecommendation.complementTakenTimes.map((timestamp) => (
+                  <Text
+                    key={`${bestRecommendation.supplement.id}-${timestamp}`}
+                    style={styles.bestTimesItem}
+                  >
+                    {formatHistoryDateTime(timestamp)}
+                  </Text>
+                ))}
+              </View>
+            )}
+          </View>
+        )}
+
         {loading ? (
           <View style={styles.statusCard}>
             <ActivityIndicator color="#7ea69d" />
@@ -1029,7 +1275,7 @@ export function RecommendationsScreen({
               Plan de supplementation par objectif
             </Text>
             <Text style={styles.sectionSubtitle}>
-              Cochez les complements pris puis validez avec le bouton Enregistrer.
+              Les complements sont classes par grade, puis par couverture des symptomes. Cochez les complements pris puis validez avec le bouton Enregistrer.
             </Text>
 
             {visibleObjectivePlans.length === 0 ? (
@@ -1121,6 +1367,18 @@ export function RecommendationsScreen({
                                           {supplement.dosage}
                                         </Text>
                                       </View>
+                                      <View style={styles.supplementRankingBadge}>
+                                        <Text style={styles.supplementRankingText}>
+                                          {formatCoverageLabel(supplement.scoreSymptoms)}
+                                        </Text>
+                                      </View>
+                                      {supplement.grade ? (
+                                        <View style={styles.supplementRankingBadge}>
+                                          <Text style={styles.supplementRankingText}>
+                                            Grade {supplement.grade}
+                                          </Text>
+                                        </View>
+                                      ) : null}
                                     </View>
                                     {latestTakenAt && (
                                       <Text style={styles.supplementTakenTime}>
@@ -1182,6 +1440,29 @@ export function RecommendationsScreen({
                                 <Text style={styles.sectionText}>
                                   {supplement.reason}
                                 </Text>
+                              </View>
+
+                              <View style={styles.section}>
+                                <Text style={styles.sectionLabel}>Classement</Text>
+                                <View style={styles.rankingDetailsContainer}>
+                                  <View style={styles.rankingDetailBadge}>
+                                    <Text style={styles.rankingDetailText}>
+                                      {formatCoverageLabel(supplement.scoreSymptoms)}
+                                    </Text>
+                                  </View>
+                                  {supplement.grade ? (
+                                    <View style={styles.rankingDetailBadge}>
+                                      <Text style={styles.rankingDetailText}>
+                                        Grade {supplement.grade}
+                                      </Text>
+                                    </View>
+                                  ) : null}
+                                  <View style={styles.rankingDetailBadge}>
+                                    <Text style={styles.rankingDetailText}>
+                                      {formatGradeSource(supplement.gradeSource)}
+                                    </Text>
+                                  </View>
+                                </View>
                               </View>
 
                               {supplement.molecules.length > 0 && (
@@ -1734,6 +2015,8 @@ const styles = StyleSheet.create({
     marginTop: 8,
     flexDirection: "row",
     alignItems: "center",
+    flexWrap: "wrap",
+    gap: 8,
   },
   supplementTakenTime: {
     marginTop: 6,
@@ -1751,6 +2034,19 @@ const styles = StyleSheet.create({
     fontSize: 12,
     color: "#7ea69d",
     fontWeight: "600",
+  },
+  supplementRankingBadge: {
+    borderRadius: 999,
+    paddingHorizontal: 10,
+    paddingVertical: 5,
+    backgroundColor: "#eef3ef",
+    borderWidth: 1,
+    borderColor: "rgba(126, 166, 157, 0.28)",
+  },
+  supplementRankingText: {
+    fontSize: 12,
+    color: "#2f675c",
+    fontWeight: "700",
   },
   expandButton: {
     padding: 4,
@@ -1796,6 +2092,25 @@ const styles = StyleSheet.create({
   sectionText: {
     fontSize: 14,
     color: "#7ea69d",
+  },
+  rankingDetailsContainer: {
+    flexDirection: "row",
+    flexWrap: "wrap",
+    gap: 8,
+    marginTop: 6,
+  },
+  rankingDetailBadge: {
+    backgroundColor: "#eef3ef",
+    borderRadius: 999,
+    paddingHorizontal: 12,
+    paddingVertical: 6,
+    borderWidth: 1,
+    borderColor: "rgba(126, 166, 157, 0.28)",
+  },
+  rankingDetailText: {
+    fontSize: 12,
+    color: "#2f675c",
+    fontWeight: "700",
   },
   moleculesContainer: {
     flexDirection: "row",
