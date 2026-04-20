@@ -1,93 +1,101 @@
-﻿# myAja
+# myAja (`AJA_ptut`)
 
-A React Native + Expo app for personalized supplement recommendations, onboarding, tracking, and encyclopedie content.
+Frontend app built with Expo / React Native for onboarding, recommendations, tracking, and encyclopedie content.
 
-## Architecture
+## What To Run
 
-### Frontend
-- Location: `d:/ptut/AJA_ptut`
-- Stack: Expo SDK 54, React Native, Axios, React Query
-- Navigation: app-local screen state in `app/_layout.tsx`
-- Shared data layer: `hooks/use-health-data.ts`
+For the real project, this folder is only the frontend.
 
-### Official backend
-- Location: `d:/ptut/Experta/api.py`
-- Stack: FastAPI + MongoDB + recommendation engine
-- This is the backend the frontend is expected to use for:
-  - auth
-  - onboarding/profile updates
-  - recommendations
-  - tracking/progress
-  - dashboard/home questions
-  - encyclopedie
+- `AJA_ptut` = frontend UI
+- `Experta` = real backend API + recommendation engine + MongoDB storage
+- `AJA_ptut/backend` = old mock backend, not the one to use for the client demo
 
-### Legacy mock backend
-- Location: `d:/ptut/AJA_ptut/backend/server.js`
-- Stack: Express + in-memory data
-- Status: deprecated
-- Keep it only for isolated UI mock/demo work. It is not the source of truth anymore.
+## Client Run Guide
 
-## Quick start
+### Prerequisites
 
-### 1. Start the official backend
+- Node.js + npm
+- Python 3.10+
+- MongoDB running locally on `mongodb://127.0.0.1:27017`
+- Two terminals
+
+### 1. Start the backend (`Experta`)
+
 ```powershell
 cd d:\ptut\Experta
+Copy-Item .env.example .env
+python -m venv .venv
+.venv\Scripts\Activate.ps1
+pip install -r requirements.txt
 python -m uvicorn api:app --reload --host 0.0.0.0 --port 8000
 ```
 
-### 2. Start the frontend
+If `.env` already exists and dependencies are already installed, only the last 2 commands are needed.
+
+### 2. Start the frontend (`AJA_ptut`)
+
 ```powershell
 cd d:\ptut\AJA_ptut
+Copy-Item .env.example .env
 npm install
 npm run web
 ```
 
-The frontend uses `EXPO_PUBLIC_API_URL` when provided, otherwise it falls back to:
+Then open `http://localhost:8082`.
+
+## How `AJA_ptut` And `Experta` Work Together
+
+`AJA_ptut` does not compute recommendations itself. It calls the FastAPI backend from [`services/api.ts`](services/api.ts).
+
+Main flow:
+
+1. The user signs up or logs in from the frontend.
+2. The frontend sends auth requests to `Experta` on port `8000`.
+3. The onboarding form updates the user profile in MongoDB through `Experta`.
+4. When the user asks for recommendations, the frontend calls `GET /decide/me`.
+5. `Experta` runs the rule engine, stores the recommendation, and returns the result to the UI.
+6. Tracking and encyclopedie screens keep reading data from the same backend.
+
+If `Experta` is not running, the frontend can open, but signup, onboarding, recommendations, tracking, and encyclopedie data will not work.
+
+## API URL
+
+The frontend uses `EXPO_PUBLIC_API_URL` when it is set. Otherwise it falls back to:
+
 ```txt
 http://127.0.0.1:8000
 ```
 
-On Expo Go mobile, the app now tries to infer your computer LAN IP from the Expo dev server and uses `http://<your-local-ip>:8000`.
-Your phone and computer still need to be on the same Wi-Fi, and the backend must listen on `0.0.0.0`.
+The default `.env.example` already points to the correct local backend URL.
 
-## Current app flow
+For a phone on the same Wi-Fi network, set:
 
-1. Signup / login
-2. Onboarding profile completion
-3. Personalized recommendations
-4. Daily tracking in `Suivi`
-5. Encyclopedie browsing
-6. Home dashboard with random Q/A cards + tracking preview
+```txt
+EXPO_PUBLIC_API_URL=http://<your-computer-ip>:8000
+```
 
-## Data consistency work already in place
+In that case, keep the backend running with `--host 0.0.0.0`.
 
-- `Accueil`, `Recommendations`, and `Suivi` now share a React Query client.
-- Recommendation/intake saves invalidate shared health queries.
-- `Recommendations` and `Suivi` align against the same active recommendation and progress state.
-
-## Main frontend modules
-
-- `services/api.ts`: typed API client
-- `hooks/use-health-data.ts`: shared query/mutation hooks
-- `components/screens/dashboard-screen.tsx`: accueil
-- `components/screens/recommendations-screen.tsx`: recommendation plan
-- `components/screens/suivi-screen.tsx`: tracking
-- `components/screens/encyclopedie-screen.tsx`: supplement knowledge base
-
-## Notes
-
-- `expo-router` is installed because Expo expects the router entrypoint, but the app currently still uses local screen state in `app/_layout.tsx`.
-- Full router migration is still a future refactor, not the current runtime model.
-
-## Useful commands
+## Useful Commands
 
 ```powershell
+# Start the web app
+npm run web
+
+# Start Expo dev server (choose device manually)
+npx expo start
+
 # Type-check
 npx tsc --noEmit
 
 # Lint
 npm run lint
 
-# Frontend unit tests
+# Frontend tests
 npm test
 ```
+
+## Notes
+
+- For the client demo, use the web version first. It is the simplest setup.
+- The mock backend in `AJA_ptut/backend` is deprecated and should only be used for isolated UI-only testing.
