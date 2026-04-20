@@ -10,7 +10,7 @@ For the real project, this folder is only the frontend.
 - `Experta` = real backend API + recommendation engine + MongoDB storage
 - `AJA_ptut/backend` = old mock backend, not the one to use for the client demo
 
-## Client Run Guide
+## Run Guide
 
 ### Prerequisites
 
@@ -94,8 +94,3 @@ npm run lint
 # Frontend tests
 npm test
 ```
-
-## Notes
-
-- For the client demo, use the web version first. It is the simplest setup.
-- The mock backend in `AJA_ptut/backend` is deprecated and should only be used for isolated UI-only testing.
